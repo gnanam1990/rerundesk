@@ -4,11 +4,13 @@
   "description": "RerunDesk - independent benchmark rerun verification desk",
   "type": "module",
   "private": true,
-  "engines": { "node": ">=22.5.0" },
+  "engines": {
+    "node": ">=22.5.0"
+  },
   "scripts": {
     "start": "node src/index.js serve",
     "migrate": "node src/index.js migrate",
-    "test": "node --test test/",
+    "test": "node --test test/*.test.js",
     "demo": "node scripts/demo.mjs"
   }
 }

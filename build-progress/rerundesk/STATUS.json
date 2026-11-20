@@ -1,71 +1,98 @@
 {
   "project": "RerunDesk",
   "packVersion": "1.0",
-  "testedSha": null,
-  "targetBranch": null,
+  "testedSha": "PENDING-SET-AT-COMMIT",
+  "targetBranch": "devin/rerundesk",
+  "environment": {
+    "stack": "Node.js 22.23.1 ESM, zero npm dependencies, node:sqlite, node:http, node:test",
+    "dataDir": "RERUNDESK_DATA (default ./data)",
+    "testCommand": "npm test (node --test test/*.test.js) — 17 tests, all pass",
+    "demoCommand": "node scripts/demo.mjs — 13/13 steps pass",
+    "notes": "sandbox_apply denied inside build sandbox; runner records actual containment"
+  },
+  "externalDependencies": [
+    {
+      "id": "paid-worker-rail",
+      "status": "BLOCKED-local-substitute",
+      "detail": "No verified external payment rail is available in this environment. Runs settle through 'local-ledger', a team-controlled, explicitly labeled merchant adapter. Reports mark settlement local_only and never present unconfirmed payment as settled. Missing proof: live merchant order id, rail name, signed receipt, amount and network for a real paid reservation.",
+      "recordedIn": "src/services/ledger.js, report.settlement"
+    },
+    {
+      "id": "independent-operated-worker",
+      "status": "PARTIAL",
+      "detail": "Separate enrolled org identities are enforced and reported, but both orgs are operated by the same local owner in this build. A production claim needs a genuinely independent operator plus a verified commercial rail.",
+      "recordedIn": "report.independence.how_checked"
+    },
+    {
+      "id": "execution-isolation",
+      "status": "PARTIAL",
+      "detail": "sandbox-exec seatbelt profile is implemented (deny network*, read-only inputs, bounded output) but sandbox_apply is denied inside this build sandbox, so demo runs record containment 'unsandboxed'. Re-run scripts/demo.mjs on an unrestricted macOS host to capture 'sandbox-exec:no-network'.",
+      "recordedIn": "runtime.json containment field"
+    }
+  ],
   "modules": [
     {
       "id": "M01",
       "title": "Recipe admission and provenance",
-      "state": "pending",
-      "owner": null,
-      "commands": [],
-      "evidence": [],
-      "nextAction": "Implement licensed input intake, image digest verification, fixed command catalog and content-addressed recipe manifests."
+      "state": "accepted",
+      "owner": "devin",
+      "commands": ["node --test test/m01-recipes.test.js"],
+      "evidence": ["T-001 reordered manifest -> same content id", "T-002 tag/missing-license rejection persisted as rejected"],
+      "nextAction": "none"
     },
     {
       "id": "M02",
       "title": "Claims and comparison contract",
-      "state": "pending",
-      "owner": null,
-      "commands": [],
-      "evidence": [],
-      "nextAction": "Freeze evaluator, units, seed set, tolerance, baseline, hardware constraints and aggregation before procurement."
+      "state": "accepted",
+      "owner": "devin",
+      "commands": ["node --test test/m02-claims.test.js"],
+      "evidence": ["T-003 exact decimals reload", "T-004 multiseed/negative-tolerance rejection; tolerance change mints new claim id"],
+      "nextAction": "none"
     },
     {
       "id": "M03",
       "title": "Worker enrollment and purchase",
-      "state": "pending",
-      "owner": null,
-      "commands": [],
-      "evidence": [],
-      "nextAction": "Bind organization evidence, capacity offer, expiry and maximum spend. Reconcile paid reservations by merchant order identity."
+      "state": "accepted",
+      "owner": "devin",
+      "commands": ["node --test test/m03-runs.test.js"],
+      "evidence": ["T-005 idempotent reservation + ledger row", "T-006 expired offer + self-worker rejected"],
+      "nextAction": "external paid-worker rail when authorized"
     },
     {
       "id": "M04",
       "title": "Leased isolated execution",
-      "state": "pending",
-      "owner": null,
-      "commands": [],
-      "evidence": [],
-      "nextAction": "Issue worker-scoped fenced leases, mount known inputs read-only, disable egress and pin the CPU execution profile."
+      "state": "accepted",
+      "owner": "devin",
+      "commands": ["node --test test/m04-leases.test.js"],
+      "evidence": ["T-007 lease survives orchestrator restart", "T-008 expired lease cannot finalize; new epoch recoverable", "fenced runner produces pinned bundle; containment recorded"],
+      "nextAction": "capture sandbox-exec:no-network containment on an unrestricted host"
     },
     {
       "id": "M05",
       "title": "Artifact reception and verification",
-      "state": "pending",
-      "owner": null,
-      "commands": [],
-      "evidence": [],
-      "nextAction": "Collect outputs, runtime metadata, output cardinality, logs and hashes inside a bounded bundle. Recompute digests and seal the manifest."
+      "state": "accepted",
+      "owner": "devin",
+      "commands": ["node --test test/m05-artifacts.test.js"],
+      "evidence": ["T-009 dedup upload + single atomic seal", "T-010 path escape/size/digest rejections"],
+      "nextAction": "none"
     },
     {
       "id": "M06",
       "title": "Deterministic comparison",
-      "state": "pending",
-      "owner": null,
-      "commands": [],
-      "evidence": [],
-      "nextAction": "Implement the pinned metric on worker outputs. Distinguish divergence from missing evidence, bad seed, metric mismatch or incompatible hardware."
+      "state": "accepted",
+      "owner": "devin",
+      "commands": ["node --test test/m06-evaluate.test.js"],
+      "evidence": ["T-011 890/1000 reproduced, 889/1000 diverged", "T-012 999 rows and dup+missing -> inconclusive output_incomplete", "reason codes bad_seed/metric_mismatch/incompatible_hardware/missing_evidence"],
+      "nextAction": "none"
     },
     {
       "id": "M07",
       "title": "Report, settlement and repeatability",
-      "state": "pending",
-      "owner": null,
-      "commands": [],
-      "evidence": [],
-      "nextAction": "Ship run timeline, outcome explanation, independent-operator evidence, exact reproduction manifest and separate cost history."
+      "state": "accepted",
+      "owner": "devin",
+      "commands": ["node --test test/m07-report.test.js"],
+      "evidence": ["T-013 packet + identical re-evaluation on fresh handle", "T-014 unconfirmed payment never settled; missing identity proof never independent", "viewer redaction; tenant denial"],
+      "nextAction": "none"
     }
   ]
 }
