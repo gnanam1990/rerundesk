@@ -1,0 +1,35 @@
+(version 1)
+(deny default)
+
+; process control within the child's own job
+(allow process-exec)
+(allow process-fork)
+(allow job-creation)
+(allow process-info*)
+(allow signal (target self))
+
+; mach/sysinfo/shm needed by node + libuv startup
+(allow mach-lookup)
+(allow sysctl-read)
+(allow ipc-posix-shm)
+(allow file-ioctl)
+
+; read scope: JS runtime install, system loader/frameworks, reviewed recipe,
+; immutable mounted inputs, startup character devices
+(allow file-read* file-read-metadata
+  (subpath "/Users/kratos/.hermes/node")
+  (subpath "/System/Library")
+  (subpath "/usr/lib")
+
+  (subpath "/Volumes/ExternalSSD/Projects/GoKiteAI-Devin-builds-20261120/rerundesk/benchmark/recipes")
+  (subpath "/Volumes/ExternalSSD/Projects/GoKiteAI-Devin-builds-20261120/rerundesk/.tmp/ws-zGht6q/inputs")
+  (literal "/dev/null")
+  (literal "/dev/urandom")
+  (literal "/dev/zero")
+  (literal "/dev/random"))
+
+; write scope: the fenced workspace only
+(allow file-write* (subpath "/Volumes/ExternalSSD/Projects/GoKiteAI-Devin-builds-20261120/rerundesk/.tmp/ws-zGht6q"))
+
+; no network, inbound or outbound
+(deny network*)

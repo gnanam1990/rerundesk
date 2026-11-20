@@ -1,7 +1,11 @@
-// T-007 / T-008 — Leased isolated execution (+ INV-04).
+// T-007 / T-008 — Leased isolated execution (+ INV-04), plus the fenced
+// runner. The containment assertions distinguish three honest environments:
+// contained host (sandbox_apply works), unsupported host (fail-closed 503),
+// and explicit operator override (unsandboxed, recorded as such).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import path from "node:path";
 import {
   makeApp, api, seedOrgs, seedBenchmark, reserveRun, issueLease,
 } from "./helpers.mjs";
@@ -71,28 +75,105 @@ test("T-008: an expired lease cannot finalize output even if worker finishes lat
   assert.equal(dup.status, 409);
 });
 
-test("M04: fenced runner executes the pinned recipe under sandbox-exec", async (t) => {
+test("M04: fenced runner — contained where supported, fail-closed otherwise", async (t) => {
   const app = await makeApp();
-  t.after(() => app.close());
+  t.after(() => { delete process.env.RERUNDESK_UNSAFE_RUNNER; app.close(); });
   const actors = await seedOrgs(app.base);
   const bench = await seedBenchmark(app.base, actors);
   const run = await seededRun(app, actors, bench, "m04-c");
   const lease = await issueLease(app.base, actors, run.id);
 
-  const ex = await api(app.base, { ...actors.worker, method: "POST",
+  const { preflightSandbox } = await import("../src/runner.js");
+  const support = preflightSandbox(path.join(app.dir, "preflight"));
+
+  const execute = () => api(app.base, { ...actors.worker, method: "POST",
     path: `/v1/runs/${run.id}/execute`, headers: { "x-rd-lease": lease.token },
     body: {} });
-  assert.equal(ex.status, 200, JSON.stringify(ex.body));
-  assert.equal(ex.body.exit_status, 0);
-  assert.deepEqual(ex.body.produced.sort(),
-    ["logs/run.log", "outputs/predictions.csv", "runtime.json"].sort());
 
-  const rt = JSON.parse(fs.readFileSync(`${ex.body.workspace}/runtime.json`, "utf8"));
-  // In a host where seatbelt can be applied this is 'sandbox-exec:no-network';
-  // inside this build sandbox, sandbox_apply is denied and the runner records
-  // 'unsandboxed' honestly instead of claiming isolation it did not enforce.
-  assert.ok(["sandbox-exec:no-network", "unsandboxed"].includes(rt.containment));
-  assert.equal(rt.seed, 42);
-  const preds = fs.readFileSync(`${ex.body.workspace}/outputs/predictions.csv`, "utf8");
-  assert.equal(preds.trim().split("\n").length, 1001); // header + 1000 rows
+  if (support.ok) {
+    // Contained host: real seatbelt execution must succeed and be recorded.
+    const ex = await execute();
+    assert.equal(ex.status, 200, JSON.stringify(ex.body));
+    assert.equal(ex.body.exit_status, 0);
+    assert.deepEqual(ex.body.produced.sort(),
+      ["logs/run.log", "outputs/predictions.csv", "runtime.json"].sort());
+    const rt = JSON.parse(fs.readFileSync(`${ex.body.workspace}/runtime.json`, "utf8"));
+    assert.equal(rt.containment, "sandbox-exec:no-network");
+    assert.equal(rt.seed, 42);
+    const preds = fs.readFileSync(`${ex.body.workspace}/outputs/predictions.csv`, "utf8");
+    assert.equal(preds.trim().split("\n").length, 1001);
+  } else {
+    // Unsupported host (e.g. nested inside another sandbox): the execute path
+    // must fail closed with a distinct, operator-actionable state.
+    t.diagnostic(`sandbox unsupported in this environment: ${support.detail}`);
+    const ex = await execute();
+    assert.equal(ex.status, 503);
+    assert.equal(ex.body.error.code, "SANDBOX_UNAVAILABLE");
+
+    // The explicit operator override is the only escape, and it is recorded.
+    process.env.RERUNDESK_UNSAFE_RUNNER = "1";
+    const ex2 = await execute();
+    assert.equal(ex2.status, 200, JSON.stringify(ex2.body));
+    assert.equal(ex2.body.exit_status, 0);
+    const rt = JSON.parse(fs.readFileSync(`${ex2.body.workspace}/runtime.json`, "utf8"));
+    assert.equal(rt.containment, "unsandboxed:operator-override");
+    delete process.env.RERUNDESK_UNSAFE_RUNNER;
+  }
+});
+
+test("M04: seatbelt scope — read limited to scope, write limited to workspace", async (t) => {
+  const app = await makeApp();
+  t.after(() => app.close());
+  const { preflightSandbox, sandboxProfile, runFenced } =
+    await import("../src/runner.js");
+  const support = preflightSandbox(path.join(app.dir, "preflight2"));
+  if (!support.ok) {
+    t.skip(`seatbelt cannot be applied in this environment: ${support.detail}`);
+    return;
+  }
+
+  // Disposable fixture: a probe script plus files inside and outside scope.
+  const ws = fs.mkdtempSync(path.join(app.dir, "ws-"));
+  const inputs = path.join(ws, "inputs");
+  const probeDir = path.join(ws, "probe");
+  const outside = path.join(app.dir, "outside-scope");
+  fs.mkdirSync(inputs, { recursive: true });
+  fs.mkdirSync(probeDir, { recursive: true });
+  fs.mkdirSync(outside, { recursive: true });
+  fs.writeFileSync(path.join(inputs, "allowed.txt"), "input-bytes");
+
+  const probe = path.join(probeDir, "probe.mjs");
+  fs.writeFileSync(probe, `
+import fs from "node:fs";
+const [inputFile, insideFile, outsideFile, etcFile] = process.argv.slice(2);
+const r = {};
+const attempt = (k, fn) => { try { fn(); r[k] = "allowed"; } catch (e) { r[k] = "denied"; } };
+attempt("read_in_scope", () => fs.readFileSync(inputFile));
+attempt("write_in_workspace", () => fs.writeFileSync(insideFile, "x"));
+attempt("write_outside_workspace", () => fs.writeFileSync(outsideFile, "x"));
+attempt("read_outside_scope", () => fs.readFileSync(etcFile));
+console.log(JSON.stringify(r));
+`);
+
+  const profilePath = path.join(ws, "probe.sb");
+  fs.writeFileSync(profilePath, sandboxProfile({
+    workspace: ws,
+    inputsDir: inputs,
+    recipeDir: probeDir,
+    nodeRoot: path.dirname(path.dirname(fs.realpathSync(process.execPath))),
+  }));
+
+  const insideFile = path.join(ws, "ok.txt");
+  const outsideFile = path.join(outside, "nope.txt");
+  const res = runFenced([
+    process.execPath, probe,
+    path.join(inputs, "allowed.txt"), insideFile, outsideFile, "/etc/passwd",
+  ], profilePath);
+  assert.equal(res.status, 0, res.stderr);
+  const r = JSON.parse(res.stdout.trim());
+  assert.equal(r.read_in_scope, "allowed");
+  assert.equal(r.write_in_workspace, "allowed");
+  assert.equal(r.write_outside_workspace, "denied");
+  assert.equal(r.read_outside_scope, "denied");
+  assert.ok(!fs.existsSync(outsideFile), "no file may be written outside the fence");
 });

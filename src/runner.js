@@ -1,8 +1,13 @@
 // M04 — Local fenced execution adapter. The recipe entrypoint runs as a child
-// process under macOS sandbox-exec with network egress denied, inputs mounted
-// read-only, a scrubbed environment, bounded wall time and bounded output.
-// If sandbox-exec is unavailable the run is refused unless RERUNDESK_UNSAFE_RUNNER=1,
-// and the runtime metadata records the actual containment used.
+// process under macOS sandbox-exec: network egress denied, filesystem reads
+// scoped to the JS runtime, system loader paths, the reviewed recipe and the
+// immutable mounted inputs, writes scoped to the fenced workspace, scrubbed
+// environment, bounded wall time and bounded output.
+//
+// Isolation is fail-closed: when a seatbelt profile cannot be applied the run
+// is refused (SANDBOX_UNAVAILABLE). The only escape is the explicit operator
+// override RERUNDESK_UNSAFE_RUNNER=1, which records containment 'unsandboxed'
+// in runtime.json instead of claiming isolation that was not enforced.
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -13,21 +18,108 @@ import { getRecipe } from "./services/recipes.js";
 import { getDataset } from "./services/datasets.js";
 import { getClaim } from "./services/claims.js";
 import { readObject } from "./objectstore.js";
+import { HttpError } from "./errors.js";
 
-function sandboxProfile(workspace) {
+const SANDBOX_EXEC = "/usr/bin/sandbox-exec";
+
+const realpath = (p) => fs.realpathSync(p);
+
+// Install root of the running JS runtime (covers bin/ plus any shared libs
+// shipped inside the install, without opening the whole host).
+function nodeInstallRoot() {
+  return path.dirname(path.dirname(realpath(process.execPath)));
+}
+
+// Seatbelt subpath rules match canonical paths — every path embedded in the
+// profile MUST be passed through realpath() first, or symlinked prefixes
+// (/var -> /private/var is the standard one for tmpdirs) silently deny access.
+export function sandboxProfile({ workspace, inputsDir, recipeDir, nodeRoot }) {
+  const rw = realpath(workspace);
+  const dyldDirs = ["/private/var/db/dyld", "/var/db/dyld"]
+    .filter((d) => fs.existsSync(d))
+    .map((d) => `  (subpath "${d}")`).join("\n");
   return `(version 1)
 (deny default)
-(allow process-exec process-fork)
-(allow sysctl-read)
+
+; process control within the child's own job
+(allow process-exec)
+(allow process-fork)
+(allow job-creation)
+(allow process-info*)
+(allow signal (target self))
+
+; mach/sysinfo/shm needed by node + libuv startup
 (allow mach-lookup)
-(allow file-read*)
-(allow file-write* (subpath "${workspace}"))
+(allow sysctl-read)
+(allow ipc-posix-shm)
+(allow file-ioctl)
+
+; read scope: JS runtime install, system loader/frameworks, reviewed recipe,
+; immutable mounted inputs, startup character devices
+(allow file-read* file-read-metadata
+  (subpath "${realpath(nodeRoot)}")
+  (subpath "/System/Library")
+  (subpath "/usr/lib")
+${dyldDirs}
+  (subpath "${realpath(recipeDir)}")
+  (subpath "${realpath(inputsDir)}")
+  (literal "/dev/null")
+  (literal "/dev/urandom")
+  (literal "/dev/zero")
+  (literal "/dev/random"))
+
+; write scope: the fenced workspace only
+(allow file-write* (subpath "${rw}"))
+
+; no network, inbound or outbound
 (deny network*)
 `;
 }
 
 export function workspaceFor(runId, epoch) {
   return path.join(DATA_DIR, "workspaces", `${runId}-e${epoch}`);
+}
+
+// Spawn a child under the seatbelt profile. Shared by the recipe runner and by
+// tests that prove containment with disposable probe files.
+export function runFenced(argv, profilePath, { timeoutMs = RUNNER.maxWallSeconds * 1000 } = {}) {
+  return spawnSync(SANDBOX_EXEC, ["-f", profilePath, ...argv], {
+    env: { PATH: "/usr/bin:/bin" },
+    timeout: timeoutMs,
+    maxBuffer: RUNNER.maxStdoutBytes,
+    encoding: "utf8",
+  });
+}
+
+// Can this host apply a seatbelt profile? When a profilePath is given the
+// probe uses that exact profile, so a compile error or over-tight scope is
+// caught before the real run. Otherwise a minimal probe is generated.
+// Returns {ok, detail}.
+export function preflightSandbox(dir, profilePath) {
+  if (!fs.existsSync(SANDBOX_EXEC))
+    return { ok: false, detail: "sandbox-exec not present" };
+  fs.mkdirSync(dir, { recursive: true });
+  const probe = profilePath ?? path.join(dir, "preflight.sb");
+  if (!profilePath)
+    fs.writeFileSync(probe, `(version 1)\n(deny default)\n` +
+      `(allow process-exec)\n(allow file-read* (subpath "${nodeInstallRoot()}"))\n` +
+      `(allow file-read* (subpath "/System/Library"))\n(allow file-read* (subpath "/usr/lib"))\n` +
+      `(allow mach-lookup)\n(allow sysctl-read)\n`);
+  const r = spawnSync(SANDBOX_EXEC,
+    ["-f", probe, process.execPath, "-e", "0"], { encoding: "utf8" });
+  if (r.error) return { ok: false, detail: String(r.error) };
+  if (r.status !== 0)
+    return { ok: false, detail: `sandbox_apply probe exit ${r.status}: ${(r.stderr || "").trim().slice(0, 200)}` };
+  return { ok: true, detail: "seatbelt profile applied" };
+}
+
+export class SandboxUnavailable extends HttpError {
+  constructor(detail) {
+    super(503, "SANDBOX_UNAVAILABLE",
+      "isolated execution cannot be established on this host: " + detail +
+      ". Set RERUNDESK_UNSAFE_RUNNER=1 to run unsandboxed (recorded honestly).");
+    this.detail_code = "sandbox_apply_failed";
+  }
 }
 
 // Executes the pinned recipe for a run's active lease epoch. Returns the
@@ -57,38 +149,38 @@ export function executeRun(db, run, lease, { seed } = {}) {
   const logPath = path.join(logsDir, "run.log");
   const startedAt = new Date().toISOString();
 
-  // Preflight sandbox-exec: if the host cannot apply a seatbelt profile
-  // (e.g. we are ourselves inside a restricted sandbox), record that and run
-  // unsandboxed — the containment actually used is written to runtime.json.
   const profilePath = path.join(ws, "sandbox.sb");
-  fs.writeFileSync(profilePath, sandboxProfile(ws));
-  let containment = "unsandboxed";
-  let sandboxOk = false;
-  if (process.env.RERUNDESK_UNSAFE_RUNNER !== "1" && fs.existsSync("/usr/bin/sandbox-exec")) {
-    const probe = spawnSync("/usr/bin/sandbox-exec",
-      ["-f", profilePath, "/usr/bin/true"], { encoding: "utf8" });
-    sandboxOk = probe.status === 0;
+  let containment;
+  if (process.env.RERUNDESK_UNSAFE_RUNNER === "1") {
+    containment = "unsandboxed:operator-override";
+  } else {
+    const scope = {
+      workspace: ws, inputsDir,
+      recipeDir: path.dirname(entry.script),
+      nodeRoot: nodeInstallRoot(),
+    };
+    fs.writeFileSync(profilePath, sandboxProfile(scope));
+    const support = preflightSandbox(path.dirname(profilePath), profilePath);
+    if (!support.ok) throw new SandboxUnavailable(support.detail);
+    containment = "sandbox-exec:no-network";
   }
-  if (sandboxOk) containment = "sandbox-exec:no-network";
 
-  const argv = sandboxOk
-    ? ["/usr/bin/sandbox-exec", "-f", profilePath, process.execPath, entry.script,
-       "--dataset", dsPath, "--seed", String(useSeed),
-       "--out", outputsDir, "--log", logPath]
-    : [process.execPath, entry.script,
-       "--dataset", dsPath, "--seed", String(useSeed),
-       "--out", outputsDir, "--log", logPath];
-  const result = spawnSync(argv[0], argv.slice(1), {
-    env: { PATH: "/usr/bin:/bin", HOME: ws },
-    timeout: RUNNER.maxWallSeconds * 1000,
-    maxBuffer: RUNNER.maxStdoutBytes,
-    encoding: "utf8",
-  });
+  const argv = [entry.script,
+    "--dataset", dsPath, "--seed", String(useSeed),
+    "--out", outputsDir, "--log", logPath];
+  const result = containment === "sandbox-exec:no-network"
+    ? runFenced([process.execPath, ...argv], profilePath)
+    : spawnSync(process.execPath, argv, {
+        env: { PATH: "/usr/bin:/bin", HOME: ws },
+        timeout: RUNNER.maxWallSeconds * 1000,
+        maxBuffer: RUNNER.maxStdoutBytes,
+        encoding: "utf8",
+      });
 
   const finishedAt = new Date().toISOString();
   const tail = (result.stdout || "") + (result.stderr || "");
   fs.appendFileSync(logPath,
-    `[runner] exit=${result.status} signal=${result.signal ?? "none"}\n` +
+    `[runner] containment=${containment} exit=${result.status} signal=${result.signal ?? "none"}\n` +
     tail.slice(0, 64 * 1024));
 
   // Runtime metadata is written by the platform (not the recipe) so seed,
@@ -114,6 +206,7 @@ export function executeRun(db, run, lease, { seed } = {}) {
   return {
     workspace: ws,
     exitStatus: result.status,
+    containment,
     artifacts: [
       { path: "outputs/predictions.csv", file: path.join(outputsDir, "predictions.csv") },
       { path: "runtime.json", file: path.join(ws, "runtime.json") },
