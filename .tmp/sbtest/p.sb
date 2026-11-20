@@ -1,0 +1,8 @@
+(version 1)
+(deny default)
+(allow process-exec process-fork)
+(allow sysctl-read)
+(allow mach-lookup)
+(allow file-read*)
+(allow file-write* (subpath "/Volumes/ExternalSSD/Projects/GoKiteAI-Devin-builds-20261120/rerundesk/.tmp/sbtest"))
+(deny network*)

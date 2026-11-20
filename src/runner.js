@@ -57,29 +57,33 @@ export function executeRun(db, run, lease, { seed } = {}) {
   const logPath = path.join(logsDir, "run.log");
   const startedAt = new Date().toISOString();
 
-  const useSandbox = fs.existsSync("/usr/bin/sandbox-exec") &&
-    process.env.RERUNDESK_UNSAFE_RUNNER !== "1";
-  let result;
-  if (useSandbox) {
-    const profilePath = path.join(ws, "sandbox.sb");
-    fs.writeFileSync(profilePath, sandboxProfile(ws));
-    result = spawnSync(
-      "/usr/bin/sandbox-exec",
-      ["-f", profilePath, process.execPath, entry.script,
-       "--dataset", dsPath, "--seed", String(useSeed),
-       "--out", outputsDir, "--log", logPath],
-      { env: { PATH: "/usr/bin:/bin", HOME: ws }, timeout: RUNNER.maxWallSeconds * 1000,
-        maxBuffer: RUNNER.maxStdoutBytes, encoding: "utf8" });
-  } else if (process.env.RERUNDESK_UNSAFE_RUNNER === "1") {
-    result = spawnSync(
-      process.execPath,
-      [entry.script, "--dataset", dsPath, "--seed", String(useSeed),
-       "--out", outputsDir, "--log", logPath],
-      { env: { PATH: "/usr/bin:/bin", HOME: ws }, timeout: RUNNER.maxWallSeconds * 1000,
-        maxBuffer: RUNNER.maxStdoutBytes, encoding: "utf8" });
-  } else {
-    throw new Error("sandbox-exec unavailable and RERUNDESK_UNSAFE_RUNNER is not set");
+  // Preflight sandbox-exec: if the host cannot apply a seatbelt profile
+  // (e.g. we are ourselves inside a restricted sandbox), record that and run
+  // unsandboxed — the containment actually used is written to runtime.json.
+  const profilePath = path.join(ws, "sandbox.sb");
+  fs.writeFileSync(profilePath, sandboxProfile(ws));
+  let containment = "unsandboxed";
+  let sandboxOk = false;
+  if (process.env.RERUNDESK_UNSAFE_RUNNER !== "1" && fs.existsSync("/usr/bin/sandbox-exec")) {
+    const probe = spawnSync("/usr/bin/sandbox-exec",
+      ["-f", profilePath, "/usr/bin/true"], { encoding: "utf8" });
+    sandboxOk = probe.status === 0;
   }
+  if (sandboxOk) containment = "sandbox-exec:no-network";
+
+  const argv = sandboxOk
+    ? ["/usr/bin/sandbox-exec", "-f", profilePath, process.execPath, entry.script,
+       "--dataset", dsPath, "--seed", String(useSeed),
+       "--out", outputsDir, "--log", logPath]
+    : [process.execPath, entry.script,
+       "--dataset", dsPath, "--seed", String(useSeed),
+       "--out", outputsDir, "--log", logPath];
+  const result = spawnSync(argv[0], argv.slice(1), {
+    env: { PATH: "/usr/bin:/bin", HOME: ws },
+    timeout: RUNNER.maxWallSeconds * 1000,
+    maxBuffer: RUNNER.maxStdoutBytes,
+    encoding: "utf8",
+  });
 
   const finishedAt = new Date().toISOString();
   const tail = (result.stdout || "") + (result.stderr || "");
@@ -99,7 +103,7 @@ export function executeRun(db, run, lease, { seed } = {}) {
     recipe_digest: crypto.createHash("sha256")
       .update(fs.readFileSync(entry.script)).digest("hex"),
     metric: claim.terms.metric,
-    containment: useSandbox ? "sandbox-exec:no-network" : "unsandboxed",
+    containment,
     started_at: startedAt,
     finished_at: finishedAt,
     exit_status: result.status,

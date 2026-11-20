@@ -126,7 +126,7 @@ export function registerRoutes() {
 
   // Local fenced execution (M04): worker runs the pinned recipe in the
   // sandboxed workspace, then uploads produced artifacts itself.
-  route("POST", "/v1/runs/:id/execute", ({ db, actor, params, body }) => {
+  route("POST", "/v1/runs/:id/execute", ({ db, actor, params, body, req }) => {
     requireRole(actor, "worker");
     const run = runs.getRun(db, params.id);
     const lease = leases.validateLeaseToken(db, actor, params.id, leaseToken({ req, body }));
