@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-20T06:51:32.418Z",
+  "generated_at": "2026-11-20T08:40:09.036Z",
   "chrome": "Google Chrome for Testing 158.0.8127.18",
   "chrome_path": "/Users/kratos/Library/Caches/ms-playwright/chromium_headless_shell-1254/chrome-headless-shell-mac-arm64/chrome-headless-shell",
   "chrome_args": [
@@ -10,7 +10,7 @@
   "data_dir": "fresh mkdtemp (disposed)",
   "base_url_redacted": "http://127.0.0.1:<ephemeral>",
   "containment_seeded": "none:synthetic-bundle",
-  "run_id": "run_91d7c42cff23dc77",
+  "run_id": "run_11e6e2e7434727a8",
   "results": [
     {
       "step": "seed: run evaluated through API (890/1000 -> reproduced)",

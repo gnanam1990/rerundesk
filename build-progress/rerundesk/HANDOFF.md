@@ -52,6 +52,11 @@
   RERUNDESK_DEV_AUTH=1), HTML error pages, console settlement section,
   focus-visible/table-wrap a11y, and a zero-dep CDP browser check
   (scripts/browser-check.mjs -> 11/11, evidence under browser-evidence/).
+- Visual/UX pass applied to the console (in-place CSS vars): warm paper
+  canvas/ink/cards/borders, olive actions, editorial serif headings, real
+  dark palette via prefers-color-scheme, badge contrast per state,
+  focus-visible outlines, table-wrap scrolling at 320px, restyled error page.
+  Browser evidence regenerated: 11/11.
 - First next action: clean-checkout verify `npm test` (expect 21 pass +
   host-gated counts) and `node scripts/browser-check.mjs` on the host.
 - Next agent must reproduce: `npm test && node scripts/demo.mjs`

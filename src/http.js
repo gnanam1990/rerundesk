@@ -69,8 +69,17 @@ export function createServer(db) {
           res.end(`<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${err.status} ${esc(err.code)} · RerunDesk</title>
-<style>body{font-family:ui-monospace,Menlo,monospace;max-width:40rem;margin:2rem auto;padding:0 1rem;line-height:1.45}
-.err{border:1px solid #b33;background:#b332;padding:1rem}</style></head>
+<style>:root{color-scheme:light dark;--canvas:#FEF8F0;--ink:#1F1A14;
+--card:#FFFDF9;--border:#E3D7C2;--error:#A23A1A;--err-bg:#F4DACE}
+@media(prefers-color-scheme:dark){:root{--canvas:#1D1913;--ink:#F0E9DB;
+--card:#2A251D;--border:#4C4334;--error:#E2967B;--err-bg:#4E2417}}
+body{font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;
+background:var(--canvas);color:var(--ink);max-width:40rem;margin:2rem auto;
+padding:0 1rem;line-height:1.5}
+h1{font-family:"Crimson Text",Georgia,serif;font-weight:600;overflow-wrap:anywhere}
+.err{border:1px solid var(--error);border-left-width:4px;background:var(--err-bg);
+color:var(--error);border-radius:.4rem;padding:.6rem .8rem}
+a{color:#485C11}:focus-visible{outline:2px solid #485C11;outline-offset:2px}</style></head>
 <body><h1>${err.status} ${esc(err.code)}</h1>
 <p class="err" role="alert">${esc(err.message)}</p>
 <p><a href="/">back to console</a></p></body></html>`);
