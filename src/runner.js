@@ -33,6 +33,31 @@ function nodeInstallRoot() {
 // Seatbelt subpath rules match canonical paths — every path embedded in the
 // profile MUST be passed through realpath() first, or symlinked prefixes
 // (/var -> /private/var is the standard one for tmpdirs) silently deny access.
+//
+// Traversing to a granted path also stats every ancestor component — and
+// resolving a symlink or firmlink component (/var, /Volumes, anything on the
+// Data volume via /System/Volumes/Data) stats the symlink AND the resolved
+// chain. Emit file-read-metadata literals for every ancestor of each granted
+// path in raw, realpath and /System/Volumes/Data-prefixed form. Metadata
+// grants permit stat/traversal only — no file contents, no dir listings.
+function ancestorLiterals(paths) {
+  const seen = new Set(["/"]); // "/" already granted literally
+  const lits = [];
+  const expand = (p) => {
+    let d = path.dirname(p);
+    while (d && d !== "/" && !seen.has(d)) { seen.add(d); lits.push(d); d = path.dirname(d); }
+  };
+  for (const p of paths) {
+    let rp = p;
+    try { rp = realpath(p); } catch { /* keep raw */ }
+    for (const v of new Set([p, rp])) {
+      expand(v);
+      if (v.startsWith("/")) expand("/System/Volumes/Data" + v);
+    }
+  }
+  return lits.sort().map((l) => `  (literal "${l}")`).join("\n");
+}
+
 export function sandboxProfile({ workspace, inputsDir, recipeDir, nodeRoot }) {
   const rw = realpath(workspace);
   // dyld CacheFinder resolves the shared cache under cryptex mounts on
@@ -60,8 +85,9 @@ export function sandboxProfile({ workspace, inputsDir, recipeDir, nodeRoot }) {
 (allow file-ioctl)
 
 ; read scope: JS runtime install, system loader/frameworks, reviewed recipe,
-; immutable mounted inputs, startup character devices. dyld CacheFinder
-; stats "/" during bootstrap — a directory literal grants no file contents.
+; immutable mounted inputs, the fenced workspace (outputs may be read back),
+; startup character devices. dyld CacheFinder stats "/" during bootstrap —
+; a directory literal grants no file contents.
 (allow file-read* file-read-metadata
   (literal "/")
   (subpath "${realpath(nodeRoot)}")
@@ -70,10 +96,20 @@ export function sandboxProfile({ workspace, inputsDir, recipeDir, nodeRoot }) {
 ${loaderDirs}
   (subpath "${realpath(recipeDir)}")
   (subpath "${realpath(inputsDir)}")
+  (subpath "${rw}")
   (literal "/dev/null")
   (literal "/dev/urandom")
   (literal "/dev/zero")
   (literal "/dev/random"))
+
+; traversal metadata: ancestors (raw, resolved, firmlink) of every granted
+; path — stat allowed, contents and listings still denied
+(allow file-read-metadata
+${ancestorLiterals([workspace, inputsDir, recipeDir, nodeRoot,
+    "/dev/null", "/dev/urandom", "/dev/zero", "/dev/random",
+    "/System/Library", "/usr/lib",
+    "/System/Cryptexes", "/private/preboot/Cryptexes",
+    "/private/var/db/dyld", "/var/db/dyld"].filter((d) => fs.existsSync(d)))})
 
 ; write scope: the fenced workspace only
 (allow file-write* (subpath "${rw}"))
@@ -88,8 +124,12 @@ export function workspaceFor(runId, epoch) {
 }
 
 // Spawn a child under the seatbelt profile. Shared by the recipe runner and by
-// tests that prove containment with disposable probe files.
+// tests that prove containment with disposable probe files. Absolute-path argv
+// elements are canonicalized so the kernel-presented path matches the
+// profile's canonical grants.
 export function runFenced(argv, profilePath, { timeoutMs = RUNNER.maxWallSeconds * 1000 } = {}) {
+  argv = argv.map((a) =>
+    a.startsWith("/") && fs.existsSync(a) ? realpath(a) : a);
   return spawnSync(SANDBOX_EXEC, ["-f", profilePath, ...argv], {
     env: { PATH: "/usr/bin:/bin" },
     timeout: timeoutMs,
@@ -125,7 +165,7 @@ export function capabilityProbe(dir) {
 // unsupported environment.
 export function policyProbe(profilePath) {
   const r = spawnSync(SANDBOX_EXEC,
-    ["-f", profilePath, process.execPath, "-e", "0"], { encoding: "utf8" });
+    ["-f", profilePath, realpath(process.execPath), "-e", "0"], { encoding: "utf8" });
   if (r.error) return { ok: false, detail: String(r.error) };
   if (r.signal)
     return { ok: false, detail: `node killed by ${r.signal} under the run profile ` +
@@ -197,11 +237,11 @@ export function executeRun(db, run, lease, { seed } = {}) {
     containment = "sandbox-exec:no-network";
   }
 
-  const argv = [entry.script,
-    "--dataset", dsPath, "--seed", String(useSeed),
-    "--out", outputsDir, "--log", logPath];
+  const argv = [realpath(entry.script),
+    "--dataset", realpath(dsPath), "--seed", String(useSeed),
+    "--out", realpath(outputsDir), "--log", realpath(logPath)];
   const result = containment === "sandbox-exec:no-network"
-    ? runFenced([process.execPath, ...argv], profilePath)
+    ? runFenced([realpath(process.execPath), ...argv], profilePath)
     : spawnSync(process.execPath, argv, {
         env: { PATH: "/usr/bin:/bin", HOME: ws },
         timeout: RUNNER.maxWallSeconds * 1000,
