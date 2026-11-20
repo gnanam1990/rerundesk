@@ -1,0 +1,313 @@
+{
+  "schemaVersion": 1,
+  "status": "SPECIFICATION_ONLY",
+  "definitions": {
+    "functional": [
+      {
+        "id": "FR-01",
+        "title": "Recipe admission and provenance",
+        "definition": "Implement licensed input intake, image digest verification, fixed command catalog and content-addressed recipe manifests."
+      },
+      {
+        "id": "FR-02",
+        "title": "Claims and comparison contract",
+        "definition": "Freeze evaluator, units, seed set, tolerance, baseline, hardware constraints and aggregation before procurement."
+      },
+      {
+        "id": "FR-03",
+        "title": "Worker enrollment and purchase",
+        "definition": "Bind organization evidence, capacity offer, expiry and maximum spend. Reconcile paid reservations by merchant order identity."
+      },
+      {
+        "id": "FR-04",
+        "title": "Leased isolated execution",
+        "definition": "Issue worker-scoped fenced leases, mount known inputs read-only, disable egress and pin the CPU execution profile."
+      },
+      {
+        "id": "FR-05",
+        "title": "Artifact reception and verification",
+        "definition": "Collect outputs, runtime metadata, output cardinality, logs and hashes inside a bounded bundle. Recompute digests and seal the manifest."
+      },
+      {
+        "id": "FR-06",
+        "title": "Deterministic comparison",
+        "definition": "Implement the pinned metric on worker outputs. Distinguish divergence from missing evidence, bad seed, metric mismatch or incompatible hardware."
+      },
+      {
+        "id": "FR-07",
+        "title": "Report, settlement and repeatability",
+        "definition": "Ship run timeline, outcome explanation, independent-operator evidence, exact reproduction manifest and separate cost history."
+      }
+    ],
+    "nonfunctional": [
+      {
+        "id": "NFR-01",
+        "title": "Replayable evidence",
+        "definition": "A reviewer can reproduce the outcome from the exact input revision, actor scope, persisted decision and redacted evidence reference after a process restart."
+      }
+    ],
+    "invariants": [
+      {
+        "id": "INV-01",
+        "title": "Recipe admission and provenance",
+        "definition": "Only immutable reviewed recipes can be scheduled."
+      },
+      {
+        "id": "INV-02",
+        "title": "Claims and comparison contract",
+        "definition": "A tolerance change creates a different claim ID and cannot rewrite an active run."
+      },
+      {
+        "id": "INV-03",
+        "title": "Worker enrollment and purchase",
+        "definition": "A worker from the sponsor organization cannot be represented as independent."
+      },
+      {
+        "id": "INV-04",
+        "title": "Leased isolated execution",
+        "definition": "Only the active lease may deliver the authoritative result."
+      },
+      {
+        "id": "INV-05",
+        "title": "Artifact reception and verification",
+        "definition": "The evaluator sees sealed verified artifacts with a matching claim and attempt."
+      },
+      {
+        "id": "INV-06",
+        "title": "Deterministic comparison",
+        "definition": "Only comparable complete outputs receive numerical reproduction or divergence verdicts."
+      },
+      {
+        "id": "INV-07",
+        "title": "Report, settlement and repeatability",
+        "definition": "Payment eligibility follows contracted delivery criteria and cannot depend on matching the sponsor's preferred result."
+      }
+    ]
+  },
+  "tests": [
+    {
+      "id": "T-001",
+      "title": "Recipe admission and provenance • expected behavior",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "T-002",
+      "title": "Recipe admission and provenance • failure boundary",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "T-003",
+      "title": "Claims and comparison contract • expected behavior",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "T-004",
+      "title": "Claims and comparison contract • failure boundary",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "T-005",
+      "title": "Worker enrollment and purchase • expected behavior",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "T-006",
+      "title": "Worker enrollment and purchase • failure boundary",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "T-007",
+      "title": "Leased isolated execution • expected behavior",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "T-008",
+      "title": "Leased isolated execution • failure boundary",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "T-009",
+      "title": "Artifact reception and verification • expected behavior",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "T-010",
+      "title": "Artifact reception and verification • failure boundary",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "T-011",
+      "title": "Deterministic comparison • expected behavior",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "T-012",
+      "title": "Deterministic comparison • failure boundary",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "T-013",
+      "title": "Report, settlement and repeatability • expected behavior",
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "T-014",
+      "title": "Report, settlement and repeatability • failure boundary",
+      "status": "NOT_RUN"
+    }
+  ],
+  "modules": [
+    {
+      "id": "M01",
+      "name": "Recipe admission and provenance",
+      "file": "prompts/M01.md",
+      "requirements": [
+        "FR-01"
+      ],
+      "nonfunctional": [
+        "NFR-01"
+      ],
+      "invariants": [
+        "INV-01"
+      ],
+      "tests": [
+        "T-001",
+        "T-002"
+      ],
+      "dependsOn": [],
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "M02",
+      "name": "Claims and comparison contract",
+      "file": "prompts/M02.md",
+      "requirements": [
+        "FR-02"
+      ],
+      "nonfunctional": [
+        "NFR-01"
+      ],
+      "invariants": [
+        "INV-02"
+      ],
+      "tests": [
+        "T-003",
+        "T-004"
+      ],
+      "dependsOn": [
+        "M01"
+      ],
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "M03",
+      "name": "Worker enrollment and purchase",
+      "file": "prompts/M03.md",
+      "requirements": [
+        "FR-03"
+      ],
+      "nonfunctional": [
+        "NFR-01"
+      ],
+      "invariants": [
+        "INV-03"
+      ],
+      "tests": [
+        "T-005",
+        "T-006"
+      ],
+      "dependsOn": [
+        "M02"
+      ],
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "M04",
+      "name": "Leased isolated execution",
+      "file": "prompts/M04.md",
+      "requirements": [
+        "FR-04"
+      ],
+      "nonfunctional": [
+        "NFR-01"
+      ],
+      "invariants": [
+        "INV-04"
+      ],
+      "tests": [
+        "T-007",
+        "T-008"
+      ],
+      "dependsOn": [
+        "M03"
+      ],
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "M05",
+      "name": "Artifact reception and verification",
+      "file": "prompts/M05.md",
+      "requirements": [
+        "FR-05"
+      ],
+      "nonfunctional": [
+        "NFR-01"
+      ],
+      "invariants": [
+        "INV-05"
+      ],
+      "tests": [
+        "T-009",
+        "T-010"
+      ],
+      "dependsOn": [
+        "M04"
+      ],
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "M06",
+      "name": "Deterministic comparison",
+      "file": "prompts/M06.md",
+      "requirements": [
+        "FR-06"
+      ],
+      "nonfunctional": [
+        "NFR-01"
+      ],
+      "invariants": [
+        "INV-06"
+      ],
+      "tests": [
+        "T-011",
+        "T-012"
+      ],
+      "dependsOn": [
+        "M05"
+      ],
+      "status": "NOT_RUN"
+    },
+    {
+      "id": "M07",
+      "name": "Report, settlement and repeatability",
+      "file": "prompts/M07.md",
+      "requirements": [
+        "FR-07"
+      ],
+      "nonfunctional": [
+        "NFR-01"
+      ],
+      "invariants": [
+        "INV-07"
+      ],
+      "tests": [
+        "T-013",
+        "T-014"
+      ],
+      "dependsOn": [
+        "M06"
+      ],
+      "status": "NOT_RUN"
+    }
+  ]
+}

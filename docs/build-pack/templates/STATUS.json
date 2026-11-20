@@ -1,0 +1,71 @@
+{
+  "project": "RerunDesk",
+  "packVersion": "1.0",
+  "testedSha": null,
+  "targetBranch": null,
+  "modules": [
+    {
+      "id": "M01",
+      "title": "Recipe admission and provenance",
+      "state": "pending",
+      "owner": null,
+      "commands": [],
+      "evidence": [],
+      "nextAction": "Implement licensed input intake, image digest verification, fixed command catalog and content-addressed recipe manifests."
+    },
+    {
+      "id": "M02",
+      "title": "Claims and comparison contract",
+      "state": "pending",
+      "owner": null,
+      "commands": [],
+      "evidence": [],
+      "nextAction": "Freeze evaluator, units, seed set, tolerance, baseline, hardware constraints and aggregation before procurement."
+    },
+    {
+      "id": "M03",
+      "title": "Worker enrollment and purchase",
+      "state": "pending",
+      "owner": null,
+      "commands": [],
+      "evidence": [],
+      "nextAction": "Bind organization evidence, capacity offer, expiry and maximum spend. Reconcile paid reservations by merchant order identity."
+    },
+    {
+      "id": "M04",
+      "title": "Leased isolated execution",
+      "state": "pending",
+      "owner": null,
+      "commands": [],
+      "evidence": [],
+      "nextAction": "Issue worker-scoped fenced leases, mount known inputs read-only, disable egress and pin the CPU execution profile."
+    },
+    {
+      "id": "M05",
+      "title": "Artifact reception and verification",
+      "state": "pending",
+      "owner": null,
+      "commands": [],
+      "evidence": [],
+      "nextAction": "Collect outputs, runtime metadata, output cardinality, logs and hashes inside a bounded bundle. Recompute digests and seal the manifest."
+    },
+    {
+      "id": "M06",
+      "title": "Deterministic comparison",
+      "state": "pending",
+      "owner": null,
+      "commands": [],
+      "evidence": [],
+      "nextAction": "Implement the pinned metric on worker outputs. Distinguish divergence from missing evidence, bad seed, metric mismatch or incompatible hardware."
+    },
+    {
+      "id": "M07",
+      "title": "Report, settlement and repeatability",
+      "state": "pending",
+      "owner": null,
+      "commands": [],
+      "evidence": [],
+      "nextAction": "Ship run timeline, outcome explanation, independent-operator evidence, exact reproduction manifest and separate cost history."
+    }
+  ]
+}
