@@ -1,14 +1,14 @@
 {
   "project": "RerunDesk",
   "packVersion": "1.0",
-  "testedSha": "b4052328a82724a5e6702a847f48a6165f4e2ff2",
+  "testedSha": "f39f3f2",
   "targetBranch": "devin/rerundesk",
   "environment": {
     "stack": "Node.js 22.23.1 ESM, zero npm dependencies, node:sqlite, node:http, node:test",
     "dataDir": "RERUNDESK_DATA (default ./data)",
-    "testCommand": "npm test (node --test test/*.test.js) \u2014 17 tests, all pass",
+    "testCommand": "npm test (node --test test/*.test.js) \u2014 17 pass, 1 host-gated skip in this sandbox",
     "demoCommand": "node scripts/demo.mjs \u2014 13/13 steps pass",
-    "notes": "sandbox_apply denied inside build sandbox; runner records actual containment"
+    "notes": "sandbox_apply denied inside build sandbox -> execute fails closed 503 SANDBOX_UNAVAILABLE; RERUNDESK_UNSAFE_RUNNER=1 override recorded; contained branch verified only on unrestricted host"
   },
   "externalDependencies": [
     {
@@ -25,8 +25,8 @@
     },
     {
       "id": "execution-isolation",
-      "status": "PARTIAL",
-      "detail": "sandbox-exec seatbelt profile is implemented (deny network*, read-only inputs, bounded output) but sandbox_apply is denied inside this build sandbox, so demo runs record containment 'unsandboxed'. Re-run scripts/demo.mjs on an unrestricted macOS host to capture 'sandbox-exec:no-network'.",
+      "status": "HOST-RECHECK-PENDING",
+      "detail": "Seatbelt isolation is implemented and fail-closed: profile canonicalizes every path (root cause of the host child-exit-1 was /var -> /private/var symlink in tmpdir workspaces), reads scoped to node install + system loader + recipe + mounted inputs, writes scoped to the fenced workspace, network denied. If sandbox_apply is impossible the API returns 503 SANDBOX_UNAVAILABLE; only RERUNDESK_UNSAFE_RUNNER=1 runs unsandboxed and records it. This build sandbox cannot apply seatbelt, so contained execution + scope-denial probe (test/m04-leases.test.js 'M04: seatbelt scope') is verified by tests but pending host recheck.",
       "recordedIn": "runtime.json containment field"
     }
   ],
@@ -79,14 +79,17 @@
       "state": "accepted",
       "owner": "devin",
       "commands": [
-        "node --test test/m04-leases.test.js"
+        "node --test test/m04-leases.test.js",
+        "npm test"
       ],
       "evidence": [
         "T-007 lease survives orchestrator restart",
         "T-008 expired lease cannot finalize; new epoch recoverable",
-        "fenced runner produces pinned bundle; containment recorded"
+        "fenced runner fail-closed: 503 SANDBOX_UNAVAILABLE when seatbelt cannot be applied; override recorded",
+        "host child-exit-1 root-caused to non-canonical /var tmpdir path in profile; fixed via realpath",
+        "PENDING HOST: contained branch (containment='sandbox-exec:no-network') + scope-denial probe"
       ],
-      "nextAction": "capture sandbox-exec:no-network containment on an unrestricted host"
+      "nextAction": "run npm test on an unrestricted macOS host at f39f3f2 to verify the contained branch"
     },
     {
       "id": "M05",
