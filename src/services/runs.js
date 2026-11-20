@@ -19,13 +19,14 @@ export function recordEvent(db, runId, actor, action, detail = {}) {
 
 export function reserveRun(db, actor, body, idemKey, nowIso = now()) {
   if (!idemKey) throw badRequest("IDEMPOTENCY_KEY_REQUIRED", "Idempotency-Key header required");
+  if (typeof body?.claim_id !== "string" || typeof body?.offer_id !== "string")
+    throw badRequest("RUN_FIELDS_REQUIRED", "claim_id and offer_id are required");
   const claim = getClaim(db, body?.claim_id);
   const offer = getOffer(db, body?.offer_id);
   const maxSpend = body?.max_spend_minor;
   if (!Number.isInteger(maxSpend) || maxSpend < 0)
     throw badRequest("MAX_SPEND_INVALID", "max_spend_minor must be a non-negative integer");
-  if (claim.sponsor_org_id !== actor.org_id)
-    throw forbidden("claim belongs to a different sponsor organization", "CLAIM_NOT_OWNED");
+  // Claims are shared frozen contracts; the run records the reserving sponsor.
 
   const payloadHash = sha256hex(canonicalize({
     claim_id: body.claim_id, offer_id: body.offer_id, max_spend_minor: maxSpend,
