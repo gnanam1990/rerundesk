@@ -239,7 +239,8 @@ export function executeRun(db, run, lease, { seed } = {}) {
 
   const argv = [realpath(entry.script),
     "--dataset", realpath(dsPath), "--seed", String(useSeed),
-    "--out", realpath(outputsDir), "--log", realpath(logPath)];
+    "--out", realpath(outputsDir),
+    "--log", path.join(realpath(logsDir), path.basename(logPath))];
   const result = containment === "sandbox-exec:no-network"
     ? runFenced([realpath(process.execPath), ...argv], profilePath)
     : spawnSync(process.execPath, argv, {
