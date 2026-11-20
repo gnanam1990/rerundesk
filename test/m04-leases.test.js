@@ -83,8 +83,8 @@ test("M04: fenced runner — contained where supported, fail-closed otherwise", 
   const run = await seededRun(app, actors, bench, "m04-c");
   const lease = await issueLease(app.base, actors, run.id);
 
-  const { preflightSandbox } = await import("../src/runner.js");
-  const support = preflightSandbox(path.join(app.dir, "preflight"));
+  const { capabilityProbe } = await import("../src/runner.js");
+  const support = capabilityProbe(path.join(app.dir, "preflight"));
 
   const execute = () => api(app.base, { ...actors.worker, method: "POST",
     path: `/v1/runs/${run.id}/execute`, headers: { "x-rd-lease": lease.token },
@@ -92,6 +92,8 @@ test("M04: fenced runner — contained where supported, fail-closed otherwise", 
 
   if (support.ok) {
     // Contained host: real seatbelt execution must succeed and be recorded.
+    // A policy/launch failure here (500 SANDBOX_POLICY_FAILED) is a defect
+    // and must fail the test, never be reclassified as "unsupported".
     const ex = await execute();
     assert.equal(ex.status, 200, JSON.stringify(ex.body));
     assert.equal(ex.body.exit_status, 0);
@@ -124,9 +126,9 @@ test("M04: fenced runner — contained where supported, fail-closed otherwise", 
 test("M04: seatbelt scope — read limited to scope, write limited to workspace", async (t) => {
   const app = await makeApp();
   t.after(() => app.close());
-  const { preflightSandbox, sandboxProfile, runFenced } =
+  const { capabilityProbe, sandboxProfile, runFenced } =
     await import("../src/runner.js");
-  const support = preflightSandbox(path.join(app.dir, "preflight2"));
+  const support = capabilityProbe(path.join(app.dir, "preflight2"));
   if (!support.ok) {
     t.skip(`seatbelt cannot be applied in this environment: ${support.detail}`);
     return;

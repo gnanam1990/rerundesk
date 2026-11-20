@@ -117,33 +117,61 @@ async function main() {
     `epoch ${hb.body.lease?.epoch}`);
 
   // --- fenced execution + bundle upload + seal (M04/M05) ---
+  // Fenced execution is REQUIRED to claim success — no automatic override.
+  // SANDBOX_UNAVAILABLE (503) => isolation genuinely unavailable here: the
+  // step is recorded blocked and the demo continues with a labeled synthetic
+  // bundle so the remaining verdict evidence still exercises the pipeline.
+  // SANDBOX_POLICY_FAILED (500) => a defect in our profile: loud failure.
   let ex = await api(W, "POST", `/v1/runs/${run.id}/execute`, {},
     { headers: { "x-rd-lease": lease.token } });
-  let unsafeOverride = false;
-  if (ex.status === 503 && ex.body.error?.code === "SANDBOX_UNAVAILABLE") {
-    // Host cannot apply seatbelt (e.g. nested sandbox). Restart the server
-    // with the explicit operator override; containment is recorded honestly.
-    unsafeOverride = true;
-    stopServer();
-    await new Promise((r) => setTimeout(r, 400));
-    process.env.RERUNDESK_UNSAFE_RUNNER = "1";
-    await startServer();
-    ex = await api(W, "POST", `/v1/runs/${run.id}/execute`, {},
-      { headers: { "x-rd-lease": lease.token } });
-  }
-  const ws = ex.body.workspace;
   const produced = ["outputs/predictions.csv", "runtime.json", "logs/run.log"];
-  let uploadsOk = ex.status === 200;
-  for (const p of produced) {
-    const bytes = fs.readFileSync(path.join(ws, p));
-    const u = await api(W, "PUT",
-      `/v1/runs/${run.id}/artifacts?path=${encodeURIComponent(p)}`, undefined,
-      { headers: { "x-rd-lease": lease.token }, rawBody: bytes });
-    uploadsOk &&= u.status === 201;
+  let uploadsOk;
+  let rt;
+  if (ex.status === 200) {
+    const ws = ex.body.workspace;
+    uploadsOk = true;
+    for (const p of produced) {
+      const bytes = fs.readFileSync(path.join(ws, p));
+      const u = await api(W, "PUT",
+        `/v1/runs/${run.id}/artifacts?path=${encodeURIComponent(p)}`, undefined,
+        { headers: { "x-rd-lease": lease.token }, rawBody: bytes });
+      uploadsOk &&= u.status === 201;
+    }
+    rt = JSON.parse(fs.readFileSync(path.join(ws, "runtime.json"), "utf8"));
+    step(`fenced execution (${rt.containment}) + bundle upload`,
+      uploadsOk && rt.containment === "sandbox-exec:no-network",
+      `${ex.body.produced?.length ?? 0} artifacts`);
+  } else {
+    const blocked = ex.status === 503 && ex.body.error?.code === "SANDBOX_UNAVAILABLE";
+    const detail = blocked ? "BLOCKED — " + ex.body.error.message
+      : "FAILED — " + (ex.body.error?.message ?? JSON.stringify(ex.body));
+    step(`fenced execution (sandbox-exec:no-network)`, false, detail);
+    // Labeled synthetic bundle: verdict steps below still run, but the
+    // execution claim above stays blocked/failed — nothing claims isolation
+    // that did not happen.
+    const { predictionsMatching } = await import("../benchmark/fixtures.mjs");
+    const rtSynthetic = {
+      format: "rerundesk.runtime.v1", run_id: run.id, epoch: 1, seed: 42,
+      hardware_class: "cpu-small", image_digest: manifest.image_digest,
+      metric: "accuracy", containment: "none:synthetic-bundle",
+      started_at: new Date().toISOString(), finished_at: new Date().toISOString(),
+      exit_status: null,
+    };
+    uploadsOk = true;
+    for (const f of [
+      { p: "outputs/predictions.csv", b: Buffer.from(predictionsMatching(ds.gold, 890)) },
+      { p: "runtime.json", b: Buffer.from(JSON.stringify(rtSynthetic)) },
+      { p: "logs/run.log", b: Buffer.from("[demo] synthetic bundle — fenced execution unavailable\n") },
+    ]) {
+      const u = await api(W, "PUT",
+        `/v1/runs/${run.id}/artifacts?path=${encodeURIComponent(f.p)}`, undefined,
+        { headers: { "x-rd-lease": lease.token }, rawBody: f.b });
+      uploadsOk &&= u.status === 201;
+    }
+    step("synthetic bundle uploaded for verdict coverage (labeled)",
+      uploadsOk, "no isolation claimed");
+    rt = rtSynthetic;
   }
-  const rt = JSON.parse(fs.readFileSync(path.join(ws, "runtime.json"), "utf8"));
-  step(`fenced execution (${rt.containment}) + bundle upload`, uploadsOk,
-    `${ex.body.produced?.length ?? 0} artifacts${unsafeOverride ? " · operator override used" : ""}`);
 
   const arts = (await api(W, "GET", `/v1/runs/${run.id}/artifacts`)).body.artifacts;
   const seal = await api(W, "PUT", `/v1/runs/${run.id}/manifest`,

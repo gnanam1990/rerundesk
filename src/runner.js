@@ -35,9 +35,14 @@ function nodeInstallRoot() {
 // (/var -> /private/var is the standard one for tmpdirs) silently deny access.
 export function sandboxProfile({ workspace, inputsDir, recipeDir, nodeRoot }) {
   const rw = realpath(workspace);
-  const dyldDirs = ["/private/var/db/dyld", "/var/db/dyld"]
+  // dyld CacheFinder resolves the shared cache under cryptex mounts on
+  // modern macOS; without these reads the child SIGABRTs in bootstrap.
+  const loaderDirs = [
+    "/System/Cryptexes", "/private/preboot/Cryptexes",
+    "/private/var/db/dyld", "/var/db/dyld",
+  ]
     .filter((d) => fs.existsSync(d))
-    .map((d) => `  (subpath "${d}")`).join("\n");
+    .map((d) => `  (subpath "${realpath(d)}")`).join("\n");
   return `(version 1)
 (deny default)
 
@@ -55,12 +60,14 @@ export function sandboxProfile({ workspace, inputsDir, recipeDir, nodeRoot }) {
 (allow file-ioctl)
 
 ; read scope: JS runtime install, system loader/frameworks, reviewed recipe,
-; immutable mounted inputs, startup character devices
+; immutable mounted inputs, startup character devices. dyld CacheFinder
+; stats "/" during bootstrap — a directory literal grants no file contents.
 (allow file-read* file-read-metadata
+  (literal "/")
   (subpath "${realpath(nodeRoot)}")
   (subpath "/System/Library")
   (subpath "/usr/lib")
-${dyldDirs}
+${loaderDirs}
   (subpath "${realpath(recipeDir)}")
   (subpath "${realpath(inputsDir)}")
   (literal "/dev/null")
@@ -91,26 +98,40 @@ export function runFenced(argv, profilePath, { timeoutMs = RUNNER.maxWallSeconds
   });
 }
 
-// Can this host apply a seatbelt profile? When a profilePath is given the
-// probe uses that exact profile, so a compile error or over-tight scope is
-// caught before the real run. Otherwise a minimal probe is generated.
-// Returns {ok, detail}.
-export function preflightSandbox(dir, profilePath) {
+// Capability probe: can this host apply ANY seatbelt profile? Uses the
+// minimal baseline the OS ships for (/usr/bin/true). A failure here means the
+// environment genuinely cannot sandbox (e.g. nested inside another sandbox).
+export function capabilityProbe(dir) {
   if (!fs.existsSync(SANDBOX_EXEC))
     return { ok: false, detail: "sandbox-exec not present" };
   fs.mkdirSync(dir, { recursive: true });
-  const probe = profilePath ?? path.join(dir, "preflight.sb");
-  if (!profilePath)
-    fs.writeFileSync(probe, `(version 1)\n(deny default)\n` +
-      `(allow process-exec)\n(allow file-read* (subpath "${nodeInstallRoot()}"))\n` +
-      `(allow file-read* (subpath "/System/Library"))\n(allow file-read* (subpath "/usr/lib"))\n` +
-      `(allow mach-lookup)\n(allow sysctl-read)\n`);
+  const probe = path.join(dir, "capability.sb");
+  fs.writeFileSync(probe, `(version 1)\n(deny default)\n(allow process-exec)\n` +
+    `(allow file-read* (subpath "/usr/bin"))\n` +
+    `(allow file-read* (subpath "/usr/lib"))\n` +
+    `(allow file-read* (subpath "/System/Library"))\n`);
   const r = spawnSync(SANDBOX_EXEC,
-    ["-f", probe, process.execPath, "-e", "0"], { encoding: "utf8" });
+    ["-f", probe, "/usr/bin/true"], { encoding: "utf8" });
   if (r.error) return { ok: false, detail: String(r.error) };
+  if (r.signal) return { ok: false, detail: `capability probe killed by ${r.signal}` };
   if (r.status !== 0)
-    return { ok: false, detail: `sandbox_apply probe exit ${r.status}: ${(r.stderr || "").trim().slice(0, 200)}` };
-  return { ok: true, detail: "seatbelt profile applied" };
+    return { ok: false, detail: `capability probe exit ${r.status}: ${(r.stderr || "").trim().slice(0, 200)}` };
+  return { ok: true, detail: "seatbelt available" };
+}
+
+// Policy probe: does OUR exact production profile let the JS runtime boot?
+// Failure here is a policy/launch defect — never classified as an
+// unsupported environment.
+export function policyProbe(profilePath) {
+  const r = spawnSync(SANDBOX_EXEC,
+    ["-f", profilePath, process.execPath, "-e", "0"], { encoding: "utf8" });
+  if (r.error) return { ok: false, detail: String(r.error) };
+  if (r.signal)
+    return { ok: false, detail: `node killed by ${r.signal} under the run profile ` +
+      `(profile blocks a required bootstrap load — defect, not environment)` };
+  if (r.status !== 0)
+    return { ok: false, detail: `policy probe exit ${r.status}: ${(r.stderr || "").trim().slice(0, 200)}` };
+  return { ok: true, detail: "profile admitted node bootstrap" };
 }
 
 export class SandboxUnavailable extends HttpError {
@@ -119,6 +140,14 @@ export class SandboxUnavailable extends HttpError {
       "isolated execution cannot be established on this host: " + detail +
       ". Set RERUNDESK_UNSAFE_RUNNER=1 to run unsandboxed (recorded honestly).");
     this.detail_code = "sandbox_apply_failed";
+  }
+}
+
+export class SandboxPolicyFailed extends HttpError {
+  constructor(detail) {
+    super(500, "SANDBOX_POLICY_FAILED",
+      "the seatbelt profile is too restrictive or invalid for the runtime: " + detail);
+    this.detail_code = "policy_defect";
   }
 }
 
@@ -159,9 +188,11 @@ export function executeRun(db, run, lease, { seed } = {}) {
       recipeDir: path.dirname(entry.script),
       nodeRoot: nodeInstallRoot(),
     };
+    const capability = capabilityProbe(ws);
+    if (!capability.ok) throw new SandboxUnavailable(capability.detail);
     fs.writeFileSync(profilePath, sandboxProfile(scope));
-    const support = preflightSandbox(path.dirname(profilePath), profilePath);
-    if (!support.ok) throw new SandboxUnavailable(support.detail);
+    const policy = policyProbe(profilePath);
+    if (!policy.ok) throw new SandboxPolicyFailed(policy.detail);
     containment = "sandbox-exec:no-network";
   }
 
