@@ -1,0 +1,153 @@
+{
+  "project": "RerunDesk",
+  "packVersion": "1.0",
+  "testedSha": "2567f02",
+  "targetBranch": "devin/rerundesk",
+  "environment": {
+    "stack": "Node.js 22.23.1 ESM, zero npm dependencies, node:sqlite, node:http, node:test",
+    "dataDir": "RERUNDESK_DATA (default ./data)",
+    "testCommand": "npm test (node --test test/*.test.js) \u2014 17 pass, 1 host-gated skip in this sandbox",
+    "demoCommand": "node scripts/demo.mjs \u2014 13/13 steps pass",
+    "notes": "sandbox_apply denied inside build sandbox -> execute fails closed 503 SANDBOX_UNAVAILABLE; RERUNDESK_UNSAFE_RUNNER=1 override recorded; contained branch verified only on unrestricted host"
+  },
+  "externalDependencies": [
+    {
+      "id": "paid-worker-rail",
+      "status": "BLOCKED-local-substitute",
+      "detail": "No verified external payment rail is available in this environment. Runs settle through 'local-ledger', a team-controlled, explicitly labeled merchant adapter. Reports mark settlement local_only and never present unconfirmed payment as settled. Missing proof: live merchant order id, rail name, signed receipt, amount and network for a real paid reservation.",
+      "recordedIn": "src/services/ledger.js, report.settlement"
+    },
+    {
+      "id": "independent-operated-worker",
+      "status": "PARTIAL",
+      "detail": "Separate enrolled org identities are enforced and reported, but both orgs are operated by the same local owner in this build. A production claim needs a genuinely independent operator plus a verified commercial rail.",
+      "recordedIn": "report.independence.how_checked"
+    },
+    {
+      "id": "execution-isolation",
+      "status": "HOST-RECHECK-PENDING",
+      "detail": "Seatbelt isolation is fail-closed with split probes: capabilityProbe (/usr/bin/true under a minimal profile) detects unsupported hosts; policyProbe (node -e 0 under the exact run profile) detects policy defects \u2014 a policy failure returns 500 SANDBOX_POLICY_FAILED and fails tests, never classified 'unsupported'. Read scope: node install, /System/Library, /usr/lib, dyld cryptex/cache dirs (/System/Cryptexes, /private/preboot/Cryptexes, /var/db/dyld), literal '/' for dyld CacheFinder bootstrap, the fenced workspace (outputs may be read back), recipe dir, mounted inputs, /dev devices \u2014 plus file-read-metadata literals on every ancestor (raw, realpath and /System/Volumes/Data firmlink form) of each granted path so traversal through /var, /Volumes and Data-volume firmlinks is permitted while contents stay denied. Child argv is canonicalized before launch. Writes scoped to the fenced workspace; network denied. Host verified: baseline /usr/bin/true probe succeeds; node bootstrap previously SIGABRTed in dyld CacheFinder \u2014 fixed via the literal '/' grant pending recipe recheck. This build sandbox cannot sandbox_apply, so contained execution + scope-denial probe (test/m04-leases.test.js 'M04: seatbelt scope') remain host-gated skips here. Demo no longer auto-overrides: default run requires sandbox-exec:no-network to claim success and exits 1 with a BLOCKED step otherwise.",
+      "recordedIn": "runtime.json containment field"
+    },
+    {
+      "id": "identity-provider",
+      "status": "LOCAL-IMPLEMENTED",
+      "detail": "Actor/tenant authority is server-side: opaque provisioned credentials (rdc_\u2026, sha256-hashed at rest) bind org+role from stored records; org kind limits which roles may be provisioned; sessions are issued only via credential-validated login. The x-rd-org/x-rd-role identity shortcut is honored only under explicit RERUNDESK_DEV_AUTH=1 and returns 401 DEV_AUTH_DISABLED otherwise. No external IdP needed for the local pack; a production deployment would integrate a real provider.",
+      "recordedIn": "src/auth.js, POST /v1/orgs/:id/credentials, test/m00-authz.test.js"
+    }
+  ],
+  "modules": [
+    {
+      "id": "M01",
+      "title": "Recipe admission and provenance",
+      "state": "accepted",
+      "owner": "devin",
+      "commands": [
+        "node --test test/m01-recipes.test.js"
+      ],
+      "evidence": [
+        "T-001 reordered manifest -> same content id",
+        "T-002 tag/missing-license rejection persisted as rejected"
+      ],
+      "nextAction": "none"
+    },
+    {
+      "id": "M02",
+      "title": "Claims and comparison contract",
+      "state": "accepted",
+      "owner": "devin",
+      "commands": [
+        "node --test test/m02-claims.test.js"
+      ],
+      "evidence": [
+        "T-003 exact decimals reload",
+        "T-004 multiseed/negative-tolerance rejection; tolerance change mints new claim id"
+      ],
+      "nextAction": "none"
+    },
+    {
+      "id": "M03",
+      "title": "Worker enrollment and purchase",
+      "state": "accepted",
+      "owner": "devin",
+      "commands": [
+        "node --test test/m03-runs.test.js"
+      ],
+      "evidence": [
+        "T-005 idempotent reservation + ledger row",
+        "T-006 expired offer + self-worker rejected"
+      ],
+      "nextAction": "external paid-worker rail when authorized"
+    },
+    {
+      "id": "M04",
+      "title": "Leased isolated execution",
+      "state": "accepted",
+      "owner": "devin",
+      "commands": [
+        "node --test test/m04-leases.test.js",
+        "npm test"
+      ],
+      "evidence": [
+        "T-007 lease survives orchestrator restart",
+        "T-008 expired lease cannot finalize; new epoch recoverable",
+        "fenced runner fail-closed: 503 SANDBOX_UNAVAILABLE when seatbelt cannot be applied; override recorded",
+        "host child-exit-1 root-caused to non-canonical /var tmpdir path in profile; fixed via realpath",
+        "PENDING HOST: contained branch (containment='sandbox-exec:no-network') + scope-denial probe"
+      ],
+      "nextAction": "run npm test on an unrestricted macOS host at f39f3f2 to verify the contained branch"
+    },
+    {
+      "id": "M05",
+      "title": "Artifact reception and verification",
+      "state": "accepted",
+      "owner": "devin",
+      "commands": [
+        "node --test test/m05-artifacts.test.js"
+      ],
+      "evidence": [
+        "T-009 dedup upload + single atomic seal",
+        "T-010 path escape/size/digest rejections"
+      ],
+      "nextAction": "none"
+    },
+    {
+      "id": "M06",
+      "title": "Deterministic comparison",
+      "state": "accepted",
+      "owner": "devin",
+      "commands": [
+        "node --test test/m06-evaluate.test.js"
+      ],
+      "evidence": [
+        "T-011 890/1000 reproduced, 889/1000 diverged",
+        "T-012 999 rows and dup+missing -> inconclusive output_incomplete",
+        "reason codes bad_seed/metric_mismatch/incompatible_hardware/missing_evidence"
+      ],
+      "nextAction": "none"
+    },
+    {
+      "id": "M07",
+      "title": "Report, settlement and repeatability",
+      "state": "accepted",
+      "owner": "devin",
+      "commands": [
+        "node --test test/m07-report.test.js"
+      ],
+      "evidence": [
+        "T-013 packet + identical re-evaluation on fresh handle",
+        "T-014 unconfirmed payment never settled; missing identity proof never independent",
+        "viewer redaction; tenant denial"
+      ],
+      "nextAction": "none"
+    }
+  ],
+  "verification": {
+    "browser": {
+      "command": "node scripts/browser-check.mjs",
+      "result": "11/11 checks passed (local run, chrome-headless-shell-1254)",
+      "evidence": "build-progress/rerundesk/browser-evidence/EVIDENCE.json + run-desktop.png, run-320px.png, denied-403.png",
+      "notes": "Ephemeral port, disposable data+profile; journey covers credential sign-in, verdict vs settlement separation, report links+JSON, 320px no-overflow, keyboard focus, reload persistence, cross-tenant HTML denial page."
+    }
+  }
+}

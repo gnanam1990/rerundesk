@@ -1,0 +1,66 @@
+[
+  {
+    "step": "enroll sponsor + independent worker orgs",
+    "ok": true,
+    "detail": "org_71622bd9a66df03e / org_750005f4ed8ed11f"
+  },
+  {
+    "step": "licensed dataset intake (CC0-1.0, 1000 samples)",
+    "ok": true,
+    "detail": "fad14684ce2ab82d2e98f1e54284bd164cebff5af7fdd902e1b427821e77a290"
+  },
+  {
+    "step": "recipe admission (pinned image digest, fixed entrypoint)",
+    "ok": true,
+    "detail": "9cee5062aeccfa176a4cae1c53a4962e606f03e9f4758e6de94fe6b508d9d69e"
+  },
+  {
+    "step": "claim frozen: accuracy 0.900 ±0.010 seed 42",
+    "ok": true,
+    "detail": "4b1b9a764a7e3a9ced27bd1ea955b85b204cf5a5ea90a6c95dd57c2f81d40c30"
+  },
+  {
+    "step": "run reserved; idempotent retry replays same run",
+    "ok": true,
+    "detail": "run_a3a1f81180b07f86"
+  },
+  {
+    "step": "orchestrator restarted mid-run; lease + run id retained",
+    "ok": true,
+    "detail": "epoch 1"
+  },
+  {
+    "step": "fenced execution (unsandboxed) + bundle upload",
+    "ok": true,
+    "detail": "3 artifacts"
+  },
+  {
+    "step": "manifest sealed, digests recomputed",
+    "ok": true,
+    "detail": "a1db3b7cbc745451"
+  },
+  {
+    "step": "evaluator: 890/1000 = 0.890, diff 0.010 within tolerance -> reproduced",
+    "ok": true,
+    "detail": "observed 0.890 vs reference 0.900: absolute difference 0.010 is within tolerance 0.010"
+  },
+  {
+    "step": "report: timeline + independence + repro manifest + cost history",
+    "ok": true,
+    "detail": "settlement=captured (local-ledger, local)"
+  },
+  {
+    "step": "second run 889/1000 = 0.889, diff 0.011 -> diverged (valid outcome)",
+    "ok": true,
+    "detail": "observed 0.889 vs reference 0.900: absolute difference 0.011 exceeds tolerance 0.010"
+  },
+  {
+    "step": "third run missing 1 of 1000 outputs -> inconclusive",
+    "ok": true,
+    "detail": "seed 42: submission is not a complete bijection over the frozen dataset ids (1 missing ids)"
+  },
+  {
+    "step": "independent re-evaluation replays identical verdict",
+    "ok": true
+  }
+]

@@ -1,0 +1,12 @@
+{
+  "run_id": "run_a3a1f81180b07f86",
+  "recorded": {
+    "outcome": "reproduced",
+    "observed_decimal": "0.890"
+  },
+  "recomputed": {
+    "outcome": "reproduced",
+    "observed_decimal": "0.890"
+  },
+  "match": true
+}
