@@ -174,7 +174,7 @@ export function evaluateRun(db, actor, runId) {
         `dataset ids (${parts.join("; ")})`);
     }
     let correct = 0;
-    for (const r of rows) if (r.label === gold.get(r.id)) correct++;
+    for (const r of rows) if (String(r.label) === String(gold.get(r.id))) correct++;
     totalCorrect += correct;
     totalRows += rows.length;
     scaled.push(observedScaled(correct, rows.length));
