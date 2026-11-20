@@ -1,7 +1,8 @@
 // API surface (TDD §HTTP boundaries). Roles: maintainer, sponsor, worker,
 // evaluator, viewer. Tenant scoping and action scope enforced server-side.
 import { route } from "./http.js";
-import { requireRole, createSession } from "./auth.js";
+import { requireRole, createSession, issueCredential, verifyCredential,
+  KIND_ROLES, PRIMARY_ROLE } from "./auth.js";
 import * as orgs from "./services/orgs.js";
 import * as datasets from "./services/datasets.js";
 import * as recipes from "./services/recipes.js";
@@ -13,7 +14,7 @@ import * as artifacts from "./services/artifacts.js";
 import * as evaluate from "./services/evaluate.js";
 import * as reports from "./services/reports.js";
 import { executeRun } from "./runner.js";
-import { badRequest } from "./errors.js";
+import { badRequest, forbidden, unauthorized } from "./errors.js";
 
 const leaseToken = (ctx) => ctx.req.headers["x-rd-lease"] ?? ctx.body?.lease_token;
 
@@ -21,22 +22,35 @@ export function registerRoutes() {
   // --- bootstrap / identity (local enrollment endpoints) ---
   route("POST", "/v1/orgs", ({ db, body }) => {
     const org = orgs.enrollOrg(db, null, body);
-    return { status: 201, body: { org } };
+    // Enrollment issues the org's bootstrap credential — the plaintext is
+    // returned exactly once; only its hash is stored.
+    const cred = issueCredential(db, org, PRIMARY_ROLE[org.kind]);
+    return { status: 201, body: { org, bootstrap_credential: cred.token,
+      credential_role: cred.role } };
   }, { public: true });
 
   route("GET", "/v1/orgs", ({ db }) => ({ orgs: orgs.listOrgs(db) }));
 
-  route("POST", "/v1/sessions", ({ db, body }) => {
-    const org = orgs.getOrg(db, body?.org_id);
+  // Provision an additional credential. Maintainers may provision for any
+  // org; other actors may provision within their own org's kind-permitted
+  // role set (the stored org kind is the authority, not the request).
+  route("POST", "/v1/orgs/:id/credentials", ({ db, actor, params, body }) => {
+    const org = orgs.getOrg(db, params.id);
     const role = body?.role;
-    if (!["maintainer", "sponsor", "worker", "evaluator", "viewer"].includes(role))
-      throw badRequest("ROLE_INVALID", "unknown role");
-    if (role === "sponsor" && !["sponsor", "both"].includes(org.kind))
-      throw badRequest("ROLE_ORG_MISMATCH", "sponsor role requires a sponsor org");
-    if (role === "worker" && !["worker", "both"].includes(org.kind))
-      throw badRequest("ROLE_ORG_MISMATCH", "worker role requires a worker org");
-    const token = createSession(db, org.id, role);
-    return { status: 201, body: { token, org_id: org.id, role } };
+    if (actor.role !== "maintainer" && actor.org_id !== org.id)
+      throw forbidden("cannot provision credentials for another organization",
+        "TENANT_DENIED");
+    const cred = issueCredential(db, org, role,
+      { label: body?.label ?? null, issuedBy: `${actor.org_id}:${actor.role}` });
+    return { status: 201, body: { credential: cred.token, org_id: org.id, role: cred.role,
+      permitted_roles: KIND_ROLES[org.kind] } };
+  });
+
+  route("POST", "/v1/sessions", ({ db, body }) => {
+    const actor = verifyCredential(db, body?.credential);
+    if (!actor) throw unauthorized("invalid credential");
+    const token = createSession(db, actor.org_id, actor.role);
+    return { status: 201, body: { token, org_id: actor.org_id, role: actor.role } };
   }, { public: true });
 
   // --- licensed input intake (M01) ---

@@ -193,6 +193,19 @@ const MIGRATIONS = [
   );
   CREATE INDEX events_run ON events(run_id);
   `,
+  // v2: provisioned opaque credentials. Only the sha256 hash of the token is
+  // stored; the plaintext is returned once at provisioning.
+  `
+  CREATE TABLE credentials (
+    token_hash TEXT PRIMARY KEY,
+    org_id TEXT NOT NULL REFERENCES orgs(id),
+    role TEXT NOT NULL CHECK (role IN ('maintainer','sponsor','worker','evaluator','viewer')),
+    label TEXT,
+    issued_by TEXT,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX credentials_org ON credentials(org_id);
+  `,
 ];
 
 export function migrate(db) {

@@ -67,7 +67,7 @@ test("T-014: unconfirmed payment is not settled; missing identity evidence is no
   // Worker org with no identity evidence enrolled.
   const bare = await api(app.base, { method: "POST", path: "/v1/orgs",
     body: { name: "Ghost LLC", kind: "worker", evidence: {} } });
-  const ghost = { org: bare.body.org.id, role: "worker" };
+  const ghost = { token: bare.body.bootstrap_credential };
   const goffer = await api(app.base, { ...ghost, method: "POST", path: "/v1/offers",
     body: { price_minor: 300, currency: "USD", ttl_seconds: 3600 } });
 
@@ -121,7 +121,7 @@ test("M07: viewer receives the redacted packet; tenant outsider is denied", asyn
   // A sponsor from an unrelated org is denied.
   const outsider = await api(app.base, { method: "POST", path: "/v1/orgs",
     body: { name: "Other", kind: "sponsor", evidence: {} } });
-  const deny = await api(app.base, { org: outsider.body.org.id, role: "sponsor",
+  const deny = await api(app.base, { token: outsider.body.bootstrap_credential,
     path: `/v1/runs/${run.id}/report` });
   assert.equal(deny.status, 404);
 });

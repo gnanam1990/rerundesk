@@ -28,6 +28,12 @@
       "status": "HOST-RECHECK-PENDING",
       "detail": "Seatbelt isolation is fail-closed with split probes: capabilityProbe (/usr/bin/true under a minimal profile) detects unsupported hosts; policyProbe (node -e 0 under the exact run profile) detects policy defects \u2014 a policy failure returns 500 SANDBOX_POLICY_FAILED and fails tests, never classified 'unsupported'. Read scope: node install, /System/Library, /usr/lib, dyld cryptex/cache dirs (/System/Cryptexes, /private/preboot/Cryptexes, /var/db/dyld), literal '/' for dyld CacheFinder bootstrap, the fenced workspace (outputs may be read back), recipe dir, mounted inputs, /dev devices \u2014 plus file-read-metadata literals on every ancestor (raw, realpath and /System/Volumes/Data firmlink form) of each granted path so traversal through /var, /Volumes and Data-volume firmlinks is permitted while contents stay denied. Child argv is canonicalized before launch. Writes scoped to the fenced workspace; network denied. Host verified: baseline /usr/bin/true probe succeeds; node bootstrap previously SIGABRTed in dyld CacheFinder \u2014 fixed via the literal '/' grant pending recipe recheck. This build sandbox cannot sandbox_apply, so contained execution + scope-denial probe (test/m04-leases.test.js 'M04: seatbelt scope') remain host-gated skips here. Demo no longer auto-overrides: default run requires sandbox-exec:no-network to claim success and exits 1 with a BLOCKED step otherwise.",
       "recordedIn": "runtime.json containment field"
+    },
+    {
+      "id": "identity-provider",
+      "status": "LOCAL-IMPLEMENTED",
+      "detail": "Actor/tenant authority is server-side: opaque provisioned credentials (rdc_\u2026, sha256-hashed at rest) bind org+role from stored records; org kind limits which roles may be provisioned; sessions are issued only via credential-validated login. The x-rd-org/x-rd-role identity shortcut is honored only under explicit RERUNDESK_DEV_AUTH=1 and returns 401 DEV_AUTH_DISABLED otherwise. No external IdP needed for the local pack; a production deployment would integrate a real provider.",
+      "recordedIn": "src/auth.js, POST /v1/orgs/:id/credentials, test/m00-authz.test.js"
     }
   ],
   "modules": [
@@ -135,5 +141,13 @@
       ],
       "nextAction": "none"
     }
-  ]
+  ],
+  "verification": {
+    "browser": {
+      "command": "node scripts/browser-check.mjs",
+      "result": "11/11 checks passed (local run, chrome-headless-shell-1254)",
+      "evidence": "build-progress/rerundesk/browser-evidence/EVIDENCE.json + run-desktop.png, run-320px.png, denied-403.png",
+      "notes": "Ephemeral port, disposable data+profile; journey covers credential sign-in, verdict vs settlement separation, report links+JSON, 320px no-overflow, keyboard focus, reload persistence, cross-tenant HTML denial page."
+    }
+  }
 }

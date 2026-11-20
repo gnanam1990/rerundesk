@@ -1,0 +1,76 @@
+{
+  "generated_at": "2026-11-20T06:51:32.418Z",
+  "chrome": "Google Chrome for Testing 158.0.8127.18",
+  "chrome_path": "/Users/kratos/Library/Caches/ms-playwright/chromium_headless_shell-1254/chrome-headless-shell-mac-arm64/chrome-headless-shell",
+  "chrome_args": [
+    "--no-sandbox",
+    "--single-process"
+  ],
+  "server": "node src/index.js serve --port 0 (ephemeral)",
+  "data_dir": "fresh mkdtemp (disposed)",
+  "base_url_redacted": "http://127.0.0.1:<ephemeral>",
+  "containment_seeded": "none:synthetic-bundle",
+  "run_id": "run_91d7c42cff23dc77",
+  "results": [
+    {
+      "step": "seed: run evaluated through API (890/1000 -> reproduced)",
+      "ok": true,
+      "detail": "containment=none:synthetic-bundle"
+    },
+    {
+      "step": "sponsor sign-in with provisioned credential",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "step": "run detail shows comparison verdict",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "step": "settlement shown separately from verdict",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "step": "report packet links present",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "step": "report JSON: verdict + cost history separate",
+      "ok": true,
+      "detail": "settlement=captured, cost rows=2"
+    },
+    {
+      "step": "320px: no horizontal overflow",
+      "ok": true,
+      "detail": "overflow=0px"
+    },
+    {
+      "step": "keyboard: Tab reaches interactive elements",
+      "ok": true,
+      "detail": "focused <A>"
+    },
+    {
+      "step": "keyboard: focus indicator visible",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "step": "reload: verdict + settlement persist",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "step": "cross-tenant denial renders visible error page",
+      "ok": true,
+      "detail": "403 RUN_NOT_VISIBLE  run is not visible to this organization  back to console"
+    }
+  ],
+  "screenshots": [
+    "denied-403.png",
+    "run-320px.png",
+    "run-desktop.png"
+  ]
+}

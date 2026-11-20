@@ -46,8 +46,12 @@
   - Execution isolation: HOST-RECHECK-PENDING at 2567f02 — capability probe
     verified working on host; policy probe passed with literal "/" grant;
     recipe run under the exact profile pending host recheck.
-- First next action: on the unrestricted Mac host, clean-checkout verify
-  `npm test` at 2567f02 — expect 18/18 with containment
-  'sandbox-exec:no-network', the scope-denial probe passing, and
-  `node scripts/demo.mjs` 14/14 (no override).
+- Host verified at 2567f02: 18/18 npm test (0 skipped), 13/13 demo with
+  sandbox-exec:no-network. Later commits added: server-side credential auth
+  (provisioned opaque tokens bind org+role; dev identity headers gated on
+  RERUNDESK_DEV_AUTH=1), HTML error pages, console settlement section,
+  focus-visible/table-wrap a11y, and a zero-dep CDP browser check
+  (scripts/browser-check.mjs -> 11/11, evidence under browser-evidence/).
+- First next action: clean-checkout verify `npm test` (expect 21 pass +
+  host-gated counts) and `node scripts/browser-check.mjs` on the host.
 - Next agent must reproduce: `npm test && node scripts/demo.mjs`

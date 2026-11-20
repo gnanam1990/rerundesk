@@ -41,7 +41,7 @@ function step(name, ok, detail) {
 }
 
 async function api(actor, method, p, body, { rawBody, headers: extra = {} } = {}) {
-  const headers = { ...(actor ? { "x-rd-org": actor.org, "x-rd-role": actor.role } : {}), ...extra };
+  const headers = { ...(actor?.token ? { authorization: `Bearer ${actor.token}` } : {}), ...extra };
   const res = await fetch(BASE + p, {
     method, headers,
     body: rawBody !== undefined ? rawBody
@@ -56,16 +56,21 @@ async function main() {
   await startServer();
 
   // --- enrollment ---
+  // Enrollment returns each org's bootstrap credential; additional roles are
+  // provisioned server-side. Actor identity = the stored credential record.
   const mk = async (name, kind, evidence) =>
-    (await api(null, "POST", "/v1/orgs", { name, kind, evidence })).body.org.id;
-  const mOrg = await mk("Maintainer Ops", "both", { operator_domain: "ops.rerundesk.local" });
-  const sOrg = await mk("Sponsor Co", "sponsor", { operator_domain: "sponsor.example" });
-  const wOrg = await mk("Independent Worker LLC", "worker", { operator_domain: "worker.example" });
-  const M = { org: mOrg, role: "maintainer" };
-  const S = { org: sOrg, role: "sponsor" };
-  const W = { org: wOrg, role: "worker" };
-  const E = { org: mOrg, role: "evaluator" };
-  step("enroll sponsor + independent worker orgs", true, `${sOrg} / ${wOrg}`);
+    (await api(null, "POST", "/v1/orgs", { name, kind, evidence })).body;
+  const mb = await mk("Maintainer Ops", "both", { operator_domain: "ops.rerundesk.local" });
+  const sb = await mk("Sponsor Co", "sponsor", { operator_domain: "sponsor.example" });
+  const wb = await mk("Independent Worker LLC", "worker", { operator_domain: "worker.example" });
+  const mOrg = mb.org.id, sOrg = sb.org.id, wOrg = wb.org.id;
+  const M = { token: mb.bootstrap_credential };
+  const S = { token: sb.bootstrap_credential };
+  const W = { token: wb.bootstrap_credential };
+  const E = { token: (await api(M, "POST", `/v1/orgs/${mOrg}/credentials`,
+    { role: "evaluator" })).body.credential };
+  step("enroll sponsor + independent worker orgs (provisioned credentials)",
+    true, `${sOrg} / ${wOrg}`);
 
   // --- licensed dataset + recipe admission (M01) ---
   const { buildDataset, predictionsMatching } = await import("../benchmark/fixtures.mjs");

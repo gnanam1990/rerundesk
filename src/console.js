@@ -2,7 +2,8 @@
 // actions re-check role and tenant scope on the server. Native controls,
 // text equivalents for status colours, tables with explicit headers.
 import { route } from "./http.js";
-import { resolveActor, createSession } from "./auth.js";
+import { resolveActor, createSession, verifyCredential, issueCredential,
+  PRIMARY_ROLE } from "./auth.js";
 import * as orgs from "./services/orgs.js";
 import * as datasets from "./services/datasets.js";
 import * as recipes from "./services/recipes.js";
@@ -13,6 +14,7 @@ import * as leases from "./services/leases.js";
 import * as artifacts from "./services/artifacts.js";
 import * as evaluate from "./services/evaluate.js";
 import * as reports from "./services/reports.js";
+import { settlementFor, costHistory } from "./services/ledger.js";
 import { executeRun, workspaceFor } from "./runner.js";
 import { HttpError } from "./errors.js";
 import fs from "node:fs";
@@ -34,6 +36,8 @@ body { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; margin: 0 au
   max-width: 64rem; padding: 1rem; line-height: 1.45; }
 nav a { margin-right: .75rem; }
 table { border-collapse: collapse; width: 100%; margin: .75rem 0; }
+.tablewrap { overflow-x: auto; }
+:focus-visible { outline: 2px solid #36c; outline-offset: 2px; }
 th, td { border: 1px solid #8884; padding: .3rem .5rem; text-align: left;
   font-size: .85rem; vertical-align: top; }
 code { font-size: .8rem; word-break: break-all; }
@@ -72,29 +76,26 @@ export function registerConsole() {
     const list = runs.listRuns(db, actor);
     return ok(page("Work queue", actor, `
 <h1>Work queue</h1>
-${list.length ? `<table><thead><tr><th scope="col">run</th><th scope="col">state</th>
+${list.length ? `<div class="tablewrap"><table><thead><tr><th scope="col">run</th><th scope="col">state</th>
 <th scope="col">outcome</th><th scope="col">claim</th><th scope="col">updated</th></tr></thead><tbody>
 ${list.map((r) => `<tr><td><a href="/runs/${r.id}"><code>${esc(r.id)}</code></a></td>
 <td>${badge(r.state)}</td><td>${r.outcome ? badge(r.outcome) : "—"}</td>
 <td><code>${esc(r.claim_id.slice(0, 12))}…</code></td><td>${esc(r.updated_at)}</td></tr>`).join("")}
-</tbody></table>` : "<p>No runs yet.</p>"}
+</tbody></table></div>` : "<p>No runs yet.</p>"}
 <p><a href="/runs/new">Reserve a run</a></p>`));
   }, { public: true });
 
   route("GET", "/login", ({ db }) => {
-    const list = orgs.listOrgs(db);
     return ok(page("Sign in", null, `
 <h1>Sign in</h1>
 <form method="post" action="/login">
-<fieldset><legend>Local session</legend>
-<label>Organization
-<select name="org_id">${list.map((o) =>
-  `<option value="${esc(o.id)}">${esc(o.name)} (${esc(o.kind)})</option>`).join("")}
-</select></label>
-<label>Role
-<select name="role">${["maintainer", "sponsor", "worker", "evaluator", "viewer"]
-  .map((r) => `<option>${r}</option>`).join("")}</select></label>
+<fieldset><legend>Provisioned credential</legend>
+<label>Credential <input name="credential" type="password" required
+  autocomplete="current-password"></label>
 <button type="submit">sign in</button></fieldset></form>
+<p class="small">Sign in with a credential provisioned at enrollment or via
+<code>POST /v1/orgs/:id/credentials</code>. The stored credential record
+determines your organization and role — they cannot be chosen here.</p>
 <h2>Enroll organization</h2>
 <form method="post" action="/orgs">
 <label>Name <input name="name" required></label>
@@ -105,7 +106,9 @@ ${list.map((r) => `<tr><td><a href="/runs/${r.id}"><code>${esc(r.id)}</code></a>
 
   route("POST", "/login", ({ db, body }) => {
     const f = form(body);
-    const token = createSession(db, f.org_id, f.role);
+    const actor = verifyCredential(db, f.credential);
+    if (!actor) throw new HttpError(401, "UNAUTHORIZED", "invalid credential");
+    const token = createSession(db, actor.org_id, actor.role);
     return {
       status: 303, body: "", headers: {
         location: "/",
@@ -123,30 +126,38 @@ ${list.map((r) => `<tr><td><a href="/runs/${r.id}"><code>${esc(r.id)}</code></a>
   route("POST", "/orgs", ({ db, body }) => {
     const f = form(body);
     const evidence = f.operator_domain ? { operator_domain: f.operator_domain } : {};
-    orgs.enrollOrg(db, null, { name: f.name, kind: f.kind, evidence });
-    return redirect("/login");
+    const org = orgs.enrollOrg(db, null, { name: f.name, kind: f.kind, evidence });
+    const cred = issueCredential(db, org, PRIMARY_ROLE[org.kind]);
+    // The bootstrap credential is shown exactly once; only its hash is stored.
+    return ok(page("Organization enrolled", null, `
+<h1>Enrolled ${esc(org.name)}</h1>
+<p>Organization <code>${esc(org.id)}</code> (${esc(org.kind)}).</p>
+<p class="err" role="alert">Bootstrap credential for role
+<strong>${esc(cred.role)}</strong> — shown once, store it now:<br>
+<code>${esc(cred.token)}</code></p>
+<p><a href="/login">sign in</a></p>`));
   }, { public: true, raw: true });
 
   route("GET", "/orgs", ({ db, req }) => {
     const actor = (() => { try { return resolveActor(req, db); } catch { return null; } })();
     const list = orgs.listOrgs(db);
     return ok(page("Organizations", actor, `<h1>Organizations</h1>
-<table><thead><tr><th scope="col">id</th><th scope="col">name</th><th scope="col">kind</th>
+<div class="tablewrap"><table><thead><tr><th scope="col">id</th><th scope="col">name</th><th scope="col">kind</th>
 <th scope="col">independence</th></tr></thead><tbody>
 ${list.map((o) => `<tr><td><code>${esc(o.id)}</code></td><td>${esc(o.name)}</td>
 <td>${esc(o.kind)}</td><td>${esc(o.independence_status)}</td></tr>`).join("")}
-</tbody></table>`));
+</tbody></table></div>`));
   }, { public: true });
 
   route("GET", "/datasets", ({ db, req }) => {
     const actor = (() => { try { return resolveActor(req, db); } catch { return null; } })();
     const list = datasets.listDatasets(db);
     return ok(page("Datasets", actor, `<h1>Admitted datasets</h1>
-<table><thead><tr><th scope="col">content hash</th><th scope="col">name</th>
+<div class="tablewrap"><table><thead><tr><th scope="col">content hash</th><th scope="col">name</th>
 <th scope="col">license</th><th scope="col">samples</th></tr></thead><tbody>
 ${list.map((d) => `<tr><td><code>${esc(d.id.slice(0, 16))}…</code></td><td>${esc(d.name)}</td>
 <td>${esc(d.license_ref)}</td><td>${d.sample_count}</td></tr>`).join("")}
-</tbody></table>`));
+</tbody></table></div>`));
   }, { public: true });
 
   route("GET", "/recipes", ({ db, req }) => {
@@ -158,12 +169,12 @@ ${list.map((d) => `<tr><td><code>${esc(d.id.slice(0, 16))}…</code></td><td>${e
 <label>Manifest JSON <textarea name="manifest" rows="10" required></textarea></label>
 <button type="submit">admit</button></form>` : "";
     return ok(page("Recipes", actor, `<h1>Recipes</h1>
-<table><thead><tr><th scope="col">content id</th><th scope="col">name</th>
+<div class="tablewrap"><table><thead><tr><th scope="col">content id</th><th scope="col">name</th>
 <th scope="col">status</th><th scope="col">decided</th></tr></thead><tbody>
 ${list.map((r) => `<tr><td><code>${esc(r.id.slice(0, 16))}…</code></td>
 <td>${esc(r.manifest?.name ?? "")}</td><td>${badge(r.status)}</td>
 <td>${esc(r.decided_at ?? "")}</td></tr>`).join("")}
-</tbody></table>${admitForm}`));
+</tbody></table></div>${admitForm}`));
   }, { public: true });
 
   route("POST", "/console/recipes", ({ db, req, body }) => {
@@ -179,12 +190,12 @@ ${list.map((r) => `<tr><td><code>${esc(r.id.slice(0, 16))}…</code></td>
       .map((c) => claims.getClaim(db, c.id));
     const newForm = actor?.role === "sponsor" ? `<p><a href="/claims/new">Freeze a claim</a></p>` : "";
     return ok(page("Claims", actor, `<h1>Claims</h1>
-<table><thead><tr><th scope="col">claim id</th><th scope="col">metric</th>
+<div class="tablewrap"><table><thead><tr><th scope="col">claim id</th><th scope="col">metric</th>
 <th scope="col">reference</th><th scope="col">tolerance</th><th scope="col">seeds</th></tr></thead><tbody>
 ${all.map((c) => `<tr><td><code>${esc(c.id.slice(0, 16))}…</code></td><td>${esc(c.metric)}</td>
 <td>${esc(c.reference_decimal)}</td><td>${esc(c.absolute_tolerance)}</td>
 <td>${esc(c.seed_list.join(","))}</td></tr>`).join("")}
-</tbody></table>${newForm}`));
+</tbody></table></div>${newForm}`));
   }, { public: true });
 
   route("GET", "/claims/new", ({ db, req }) => {
@@ -236,12 +247,12 @@ different claim id and cannot rewrite an active run.</p>`));
 <label>TTL seconds <input name="ttl_seconds" type="number" value="3600" required></label>
 <button type="submit">publish</button></form>` : "";
     return ok(page("Offers", actor, `<h1>Worker offers</h1>
-<table><thead><tr><th scope="col">id</th><th scope="col">worker org</th>
+<div class="tablewrap"><table><thead><tr><th scope="col">id</th><th scope="col">worker org</th>
 <th scope="col">price</th><th scope="col">expires</th><th scope="col">eligible</th></tr></thead><tbody>
 ${list.map((o) => `<tr><td><code>${esc(o.id)}</code></td><td><code>${esc(o.worker_org_id)}</code></td>
 <td>${o.price_minor} ${esc(o.currency)}</td><td>${esc(o.expires_at)}</td>
 <td>${o.eligible ? "yes" : "no"}</td></tr>`).join("")}
-</tbody></table>${createForm}`));
+</tbody></table></div>${createForm}`));
   }, { public: true });
 
   route("POST", "/console/offers", ({ db, req, body }) => {
@@ -259,12 +270,12 @@ ${list.map((o) => `<tr><td><code>${esc(o.id)}</code></td><td><code>${esc(o.worke
     if (!actor) return redirect("/login");
     const list = runs.listRuns(db, actor);
     return ok(page("Runs", actor, `<h1>Runs</h1>
-<table><thead><tr><th scope="col">run</th><th scope="col">state</th><th scope="col">outcome</th>
+<div class="tablewrap"><table><thead><tr><th scope="col">run</th><th scope="col">state</th><th scope="col">outcome</th>
 <th scope="col">worker</th><th scope="col">updated</th></tr></thead><tbody>
 ${list.map((r) => `<tr><td><a href="/runs/${r.id}"><code>${esc(r.id)}</code></a></td>
 <td>${badge(r.state)}</td><td>${r.outcome ? badge(r.outcome) : "—"}</td>
 <td><code>${esc(r.worker_org_id)}</code></td><td>${esc(r.updated_at)}</td></tr>`).join("")}
-</tbody></table><p><a href="/runs/new">Reserve a run</a></p>`));
+</tbody></table></div><p><a href="/runs/new">Reserve a run</a></p>`));
   }, { public: true });
 
   route("GET", "/runs/new", ({ db, req }) => {
@@ -306,6 +317,8 @@ idempotent POST returns the same run.</p>`));
     const lease = leases.reapLease(db, run.id);
     const ind = reports.independenceEvidence(db, run);
     const arts = sealed ? artifacts.listArtifacts(db, run.id, sealed.epoch) : [];
+    const settle = settlementFor(db, run.id);
+    const costs = costHistory(db, run.id);
 
     const workerActions = actor.role === "worker" && actor.org_id === run.worker_org_id ? `
 <h2>Worker actions</h2>
@@ -321,12 +334,12 @@ ${lease ? `<p class="small">active lease epoch ${lease.epoch}, expires ${esc(lea
 
     const comparison = ev ? `
 <h2>Comparison</h2>
-<table><thead><tr><th scope="col">metric</th><th scope="col">reference</th>
+<div class="tablewrap"><table><thead><tr><th scope="col">metric</th><th scope="col">reference</th>
 <th scope="col">observed</th><th scope="col">difference</th><th scope="col">tolerance</th>
 <th scope="col">verdict</th></tr></thead><tbody><tr>
 <td>${esc(claim.metric)} (${esc(claim.units)})</td><td>${esc(claim.reference_decimal)}</td>
 <td>${esc(ev.observed_decimal ?? "—")}</td><td>see explanation</td>
-<td>${esc(claim.absolute_tolerance)}</td><td>${badge(ev.outcome)}</td></tr></tbody></table>
+<td>${esc(claim.absolute_tolerance)}</td><td>${badge(ev.outcome)}</td></tr></tbody></table></div>
 <p>${esc(ev.explanation)}</p>` : "";
 
     return ok(page(`Run ${run.id}`, actor, `<h1>Run <code>${esc(run.id)}</code></h1>
@@ -341,10 +354,20 @@ ${lease ? `<p class="small">active lease epoch ${lease.epoch}, expires ${esc(lea
 </dl>
 ${workerActions}${evalAction}
 ${comparison}
+<h2>Settlement (independent of verdict)</h2>
+<p>status ${badge(settle.status)} · provider <code>${esc(settle.provider)}</code>
+${settle.merchant_order_id ? `· order <code>${esc(settle.merchant_order_id)}</code>` : ""}<br>
+<span class="small">${esc(settle.note)} — payment eligibility follows contracted
+delivery/evidence, not whether the outcome matched the sponsor&#39;s preference.</span></p>
+${costs.length ? `<div class="tablewrap"><table><thead><tr><th scope="col">kind</th>
+<th scope="col">amount</th><th scope="col">status</th><th scope="col">at</th></tr></thead><tbody>
+${costs.map((c) => `<tr><td>${esc(c.kind)}</td><td>${c.amount_minor} ${esc(c.currency)}</td>
+<td>${esc(c.status)}</td><td>${esc(c.created_at)}</td></tr>`).join("")}
+</tbody></table></div>` : "<p>No cost entries recorded.</p>"}
 <h2>Artifacts${sealed ? ` (sealed epoch ${sealed.epoch})` : ""}</h2>
-${arts.length ? `<table><thead><tr><th scope="col">path</th><th scope="col">sha256</th><th scope="col">bytes</th></tr></thead><tbody>
+${arts.length ? `<div class="tablewrap"><table><thead><tr><th scope="col">path</th><th scope="col">sha256</th><th scope="col">bytes</th></tr></thead><tbody>
 ${arts.map((a) => `<tr><td><code>${esc(a.path)}</code></td><td><code>${esc(a.sha256.slice(0, 16))}…</code></td><td>${a.size}</td></tr>`).join("")}
-</tbody></table>` : "<p>none yet</p>"}
+</tbody></table></div>` : "<p>none yet</p>"}
 <p><a href="/v1/runs/${run.id}/report">JSON report</a> ·
 <a href="/v1/runs/${run.id}/report/download">download packet</a></p>`));
   }, { public: true });

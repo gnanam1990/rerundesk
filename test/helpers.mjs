@@ -26,8 +26,11 @@ export async function makeApp() {
   };
 }
 
-export async function api(base, { org, role, method = "GET", path, body, raw, headers = {} } = {}) {
+// Actors carry a provisioned credential token; `org`/`role` send the
+// dev-fixture identity headers (rejected unless RERUNDESK_DEV_AUTH=1).
+export async function api(base, { token, org, role, method = "GET", path, body, raw, headers = {} } = {}) {
   const h = { ...headers };
+  if (token) h["authorization"] = `Bearer ${token}`;
   if (org) h["x-rd-org"] = org;
   if (role) h["x-rd-role"] = role;
   let payload;
@@ -47,12 +50,18 @@ export async function seedOrgs(base) {
     body: { name: "Sponsor Co", kind: "sponsor", evidence: { operator_domain: "sponsor.example" } } });
   const w = await api(base, { method: "POST", path: "/v1/orgs",
     body: { name: "Worker LLC", kind: "worker", evidence: { operator_domain: "worker.example" } } });
+  const maintainer = { token: m.body.bootstrap_credential };
+  const sponsor = { token: s.body.bootstrap_credential };
+  const worker = { token: w.body.bootstrap_credential };
+  // Additional roles are provisioned server-side by the maintainer.
+  const prov = (orgId, role) => api(base, { ...maintainer, method: "POST",
+    path: `/v1/orgs/${orgId}/credentials`, body: { role } });
+  const ev = await prov(m.body.org.id, "evaluator");
+  const vw = await prov(s.body.org.id, "viewer");
   return {
-    maintainer: { org: m.body.org.id, role: "maintainer" },
-    sponsor: { org: s.body.org.id, role: "sponsor" },
-    worker: { org: w.body.org.id, role: "worker" },
-    evaluator: { org: m.body.org.id, role: "evaluator" },
-    viewer: { org: s.body.org.id, role: "viewer" },
+    maintainer, sponsor, worker,
+    evaluator: { token: ev.body.credential },
+    viewer: { token: vw.body.credential },
     sponsorOrg: s.body.org.id, workerOrg: w.body.org.id, maintainerOrg: m.body.org.id,
   };
 }

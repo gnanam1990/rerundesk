@@ -21,6 +21,7 @@ registerConsole();
 
 const server = createServer(db);
 server.listen(port, () => {
-  console.log(`RerunDesk listening on http://localhost:${port}`);
-  console.log(`console: http://localhost:${port}/`);
+  const bound = server.address().port;
+  console.log(`RerunDesk listening on http://localhost:${bound}`);
+  console.log(`console: http://localhost:${bound}/`);
 });

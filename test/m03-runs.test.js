@@ -62,16 +62,23 @@ test("T-006: expired quote and self-enrolled sponsor worker are rejected", async
   const both = await api(app.base, { method: "POST", path: "/v1/orgs",
     body: { name: "SelfDesk", kind: "both", evidence: {} } });
   const selfOrg = both.body.org.id;
-  const selfOffer = await api(app.base, { org: selfOrg, role: "worker",
+  // Self org provisions its own worker + sponsor credentials (kind 'both').
+  const selfAdmin = { token: both.body.bootstrap_credential };
+  const cred = async (role) => (await api(app.base, { ...selfAdmin,
+    method: "POST", path: `/v1/orgs/${selfOrg}/credentials`,
+    body: { role } })).body.credential;
+  const selfWorker = { token: await cred("worker") };
+  const selfSponsor = { token: await cred("sponsor") };
+  const selfOffer = await api(app.base, { ...selfWorker,
     method: "POST", path: "/v1/offers",
     body: { price_minor: 100, currency: "USD", ttl_seconds: 3600 } });
   // The self org freezes its own claim then tries to hire itself.
-  const selfClaim = await api(app.base, { org: selfOrg, role: "sponsor",
+  const selfClaim = await api(app.base, { ...selfSponsor,
     method: "POST", path: "/v1/claims",
     body: { recipe_hash: bench.recipe.id, metric: "accuracy",
       evaluator_version: "accuracy-v1", reference: "0.900",
       absolute_tolerance: "0.010", seed_list: [42], hardware_class: "cpu-small" } });
-  const r2 = await api(app.base, { org: selfOrg, role: "sponsor",
+  const r2 = await api(app.base, { ...selfSponsor,
     method: "POST", path: "/v1/runs", headers: { "idempotency-key": "self-1" },
     body: { claim_id: selfClaim.body.claim.id, offer_id: selfOffer.body.offer.id,
       max_spend_minor: 1000 } });
@@ -89,7 +96,7 @@ test("T-006: expired quote and self-enrolled sponsor worker are rejected", async
   const { res } = await reserveRun(app.base, actors, { claim_id: bench.claim.id, offer_id: bench.offer.id }, "iso-1");
   const outsider = await api(app.base, { method: "POST", path: "/v1/orgs",
     body: { name: "Outsider", kind: "sponsor", evidence: {} } });
-  const peek = await api(app.base, { org: outsider.body.org.id, role: "sponsor",
+  const peek = await api(app.base, { token: outsider.body.bootstrap_credential,
     path: `/v1/runs/${res.body.run.id}` });
   assert.equal(peek.status, 403);
 });
