@@ -107,6 +107,7 @@ export function capabilityProbe(dir) {
   fs.mkdirSync(dir, { recursive: true });
   const probe = path.join(dir, "capability.sb");
   fs.writeFileSync(probe, `(version 1)\n(deny default)\n(allow process-exec)\n` +
+    `(allow file-read* (literal "/"))\n` +
     `(allow file-read* (subpath "/usr/bin"))\n` +
     `(allow file-read* (subpath "/usr/lib"))\n` +
     `(allow file-read* (subpath "/System/Library"))\n`);
