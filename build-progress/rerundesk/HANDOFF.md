@@ -13,9 +13,13 @@
   - Evidence: `data/demo/demo-results.json` (13/13 PASS), `npm test` 17/17.
 - Working tree or branch requiring transfer: none.
 - Latest fix (33782bc): host-reported child exit 1 was root-caused to
-  non-canonical seatbelt paths (fixed in f39f3f2); subsequent host recheck
+  non-canonical seatbelt paths (fixed in f39f3f2); host recheck
   showed node SIGABRT in dyld CacheFinder bootstrap — fixed by adding
-  (literal "/") and cryptex/dyld cache dirs to the read scope. Probes are now
+  (literal "/") and cryptex/dyld cache dirs; further recheck showed
+  file-read-metadata denials on ancestor dirs (/var, /Volumes,
+  /System/Volumes/Data) — fixed by emitting metadata-only literals for all
+  raw/resolved/firmlink ancestors of every granted path, and canonicalizing
+  all child argv paths. Probes are now
   split: capabilityProbe (/usr/bin/true, minimal profile) detects unsupported
   hosts -> 503 SANDBOX_UNAVAILABLE; policyProbe (node -e 0 under the exact
   production profile) detects policy defects -> 500 SANDBOX_POLICY_FAILED,
@@ -39,11 +43,11 @@
     signed receipt, amount, network.
   - Independent operator: PARTIAL — distinct enrolled orgs enforced; same local
     owner operates both in this build.
-  - Execution isolation: HOST-RECHECK-PENDING at 33782bc — capability probe
+  - Execution isolation: HOST-RECHECK-PENDING at 2567f02 — capability probe
     verified working on host; policy probe passed with literal "/" grant;
     recipe run under the exact profile pending host recheck.
 - First next action: on the unrestricted Mac host, clean-checkout verify
-  `npm test` at 33782bc — expect 18/18 with containment
+  `npm test` at 2567f02 — expect 18/18 with containment
   'sandbox-exec:no-network', the scope-denial probe passing, and
   `node scripts/demo.mjs` 14/14 (no override).
 - Next agent must reproduce: `npm test && node scripts/demo.mjs`
