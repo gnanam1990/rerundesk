@@ -12,17 +12,22 @@
     (`output_incomplete`). Verdict independent of settlement.
   - Evidence: `data/demo/demo-results.json` (13/13 PASS), `npm test` 17/17.
 - Working tree or branch requiring transfer: none.
-- Latest fix (f39f3f2): host-reported child exit 1 in the fenced runner was
-  root-caused to non-canonical seatbelt paths — os.tmpdir() workspaces live
-  under /var -> /private/var, so the profile's subpath never matched and all
-  workspace writes were denied. Profile now realpath()s every embedded path,
-  narrows reads to node install + system loader + recipe + inputs, writes to
-  the fenced workspace only, denies network, and FAILS CLOSED
-  (503 SANDBOX_UNAVAILABLE) when a profile cannot be applied. The only escape
-  is explicit RERUNDESK_UNSAFE_RUNNER=1, recorded as
-  'unsandboxed:operator-override'.
+- Latest fix (33782bc): host-reported child exit 1 was root-caused to
+  non-canonical seatbelt paths (fixed in f39f3f2); subsequent host recheck
+  showed node SIGABRT in dyld CacheFinder bootstrap — fixed by adding
+  (literal "/") and cryptex/dyld cache dirs to the read scope. Probes are now
+  split: capabilityProbe (/usr/bin/true, minimal profile) detects unsupported
+  hosts -> 503 SANDBOX_UNAVAILABLE; policyProbe (node -e 0 under the exact
+  production profile) detects policy defects -> 500 SANDBOX_POLICY_FAILED,
+  which fails tests instead of being skipped. Reads: node install, system
+  loader/frameworks, cryptex cache dirs, recipe dir, mounted inputs, /dev
+  devices. Writes: fenced workspace only. deny network*. demo.mjs no longer
+  auto-sets RERUNDESK_UNSAFE_RUNNER: default demo requires
+  sandbox-exec:no-network and exits 1 with an honest BLOCKED step otherwise.
 - Commands, exit codes and tested environment:
   - `npm test` → exit 0, 17 pass + 1 host-gated skip (seatbelt scope probe)
+  - `node scripts/demo.mjs --port 8907` → 13/14 in this sandbox: fenced
+    execution step honestly BLOCKED (sandbox_apply denied), rest pass
   - `node scripts/demo.mjs` → exit 0, 13/13 steps pass (spins its own server on :8901, RERUNDESK_DATA=data/demo)
   - `node src/index.js migrate` → exit 0
   - `node scripts/reevaluate.mjs --run <id>` → replays verdict from sealed bundle
@@ -34,10 +39,11 @@
     signed receipt, amount, network.
   - Independent operator: PARTIAL — distinct enrolled orgs enforced; same local
     owner operates both in this build.
-  - Execution isolation: HOST-RECHECK-PENDING at f39f3f2 — seatbelt profile
-    implemented, fail-closed and scope-narrowed; this build sandbox cannot
-    `sandbox_apply`, so the contained branch needs one `npm test` on the host.
+  - Execution isolation: HOST-RECHECK-PENDING at 33782bc — capability probe
+    verified working on host; policy probe passed with literal "/" grant;
+    recipe run under the exact profile pending host recheck.
 - First next action: on the unrestricted Mac host, clean-checkout verify
-  `npm test` at f39f3f2 — expect 18/18 with containment
-  'sandbox-exec:no-network' and the scope-denial probe passing.
+  `npm test` at 33782bc — expect 18/18 with containment
+  'sandbox-exec:no-network', the scope-denial probe passing, and
+  `node scripts/demo.mjs` 14/14 (no override).
 - Next agent must reproduce: `npm test && node scripts/demo.mjs`
